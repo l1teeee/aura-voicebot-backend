@@ -60,6 +60,9 @@ export const WEATHER_LOOKUP_FAILED_MESSAGE: string =
 
 export const TOOL_FAILURE_LOG_PREFIX: string = 'Fallo la herramienta';
 
+export const INTERACTION_PERSISTENCE_FAILURE_LOG_PREFIX: string =
+  'Fallo al guardar la interacción del usuario en Postgres.';
+
 export const UNKNOWN_TOOL_MESSAGE: string = 'Esa herramienta no existe.';
 
 export const INTERACTION_LOG_CONFIRMATION_MESSAGE: string = 'La interacción quedó registrada.';

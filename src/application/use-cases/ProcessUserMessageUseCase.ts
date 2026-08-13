@@ -25,6 +25,7 @@ import {
   FAVORITE_CITY_SAVE_FAILED_MESSAGE,
   IDENTIFICATION_REQUIRED_MESSAGE,
   INTERACTION_LOG_CONFIRMATION_MESSAGE,
+  INTERACTION_PERSISTENCE_FAILURE_LOG_PREFIX,
   INVALID_FAVORITE_CITY_ARGUMENTS_MESSAGE,
   INVALID_FAVORITE_CITY_LIST_ARGUMENTS_MESSAGE,
   INVALID_LOG_ARGUMENTS_MESSAGE,
@@ -113,6 +114,11 @@ const logToolFailure = (toolName: string, city: string, error: unknown): void =>
   const status = error instanceof ExternalServiceError ? ` status: ${String(error.status)}` : '';
   const detail = error instanceof Error ? error.message : String(error);
   console.error(`${TOOL_FAILURE_LOG_PREFIX} ${toolName}. ciudad: ${city}.${status} ${detail}`);
+};
+
+const logInteractionPersistenceFailure = (error: unknown): void => {
+  const detail = error instanceof Error ? error.message : String(error);
+  console.error(`${INTERACTION_PERSISTENCE_FAILURE_LOG_PREFIX} ${detail}`);
 };
 
 const buildAction = (outcome: ToolLoopOutcome): ProcessUserMessageAction | null => {
@@ -220,13 +226,17 @@ export class ProcessUserMessageUseCase {
       return;
     }
 
-    await this.userRepository.saveInteraction(
-      userId,
-      sessionId,
-      userMessage,
-      botReply,
-      new Date()
-    );
+    try {
+      await this.userRepository.saveInteraction(
+        userId,
+        sessionId,
+        userMessage,
+        botReply,
+        new Date()
+      );
+    } catch (error: unknown) {
+      logInteractionPersistenceFailure(error);
+    }
   }
 
   private async runToolLoop(
