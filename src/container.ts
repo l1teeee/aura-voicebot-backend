@@ -1,10 +1,14 @@
 import OpenAI from 'openai';
 import { Pool } from 'pg';
+import { AddFavoriteCityUseCase } from './application/use-cases/AddFavoriteCityUseCase';
 import { IdentifyUserUseCase } from './application/use-cases/IdentifyUserUseCase';
+import { ListFavoriteCitiesUseCase } from './application/use-cases/ListFavoriteCitiesUseCase';
 import { ProcessUserMessageUseCase } from './application/use-cases/ProcessUserMessageUseCase';
+import { RemoveFavoriteCityUseCase } from './application/use-cases/RemoveFavoriteCityUseCase';
 import { SynthesizeSpeechUseCase } from './application/use-cases/SynthesizeSpeechUseCase';
 import { Env, loadEnv } from './config/env';
 import { ConversationRepository } from './domain/ports/ConversationRepository';
+import { FavoriteCityRepository } from './domain/ports/FavoriteCityRepository';
 import { InteractionLogger } from './domain/ports/InteractionLogger';
 import { LLMProvider } from './domain/ports/LLMProvider';
 import { SpeechProvider } from './domain/ports/SpeechProvider';
@@ -15,10 +19,12 @@ import { HttpClient } from './infrastructure/http/HttpClient';
 import { OpenAILLMProvider } from './infrastructure/llm/OpenAILLMProvider';
 import { WebhookInteractionLogger } from './infrastructure/logging/WebhookInteractionLogger';
 import { InMemoryConversationRepository } from './infrastructure/persistence/InMemoryConversationRepository';
+import { PostgresFavoriteCityRepository } from './infrastructure/persistence/PostgresFavoriteCityRepository';
 import { PostgresUserRepository } from './infrastructure/persistence/PostgresUserRepository';
 import { OpenAITextToSpeechProvider } from './infrastructure/speech/OpenAITextToSpeechProvider';
 import { OpenWeatherMapProvider } from './infrastructure/weather/OpenWeatherMapProvider';
 import { ChatController } from './interfaces/http/controllers/ChatController';
+import { FavoriteCityController } from './interfaces/http/controllers/FavoriteCityController';
 import { IdentifyUserController } from './interfaces/http/controllers/IdentifyUserController';
 import { SpeechController } from './interfaces/http/controllers/SpeechController';
 
@@ -28,6 +34,7 @@ const LOG_WEBHOOK_SERVICE_NAME = 'log-webhook';
 export interface AppContainer {
   readonly env: Env;
   readonly chatController: ChatController;
+  readonly favoriteCityController: FavoriteCityController;
   readonly identifyUserController: IdentifyUserController;
   readonly speechController: SpeechController;
   readonly shutdown: () => void;
@@ -70,18 +77,31 @@ export const createContainer = (): AppContainer => {
     env.databaseUrl === undefined ? {} : { connectionString: env.databaseUrl }
   );
   const userRepository: UserRepository = new PostgresUserRepository(postgresPool);
+  const favoriteCityRepository: FavoriteCityRepository =
+    new PostgresFavoriteCityRepository(postgresPool);
+
+  const addFavoriteCityUseCase = new AddFavoriteCityUseCase(favoriteCityRepository);
+  const listFavoriteCitiesUseCase = new ListFavoriteCitiesUseCase(favoriteCityRepository);
+  const removeFavoriteCityUseCase = new RemoveFavoriteCityUseCase(favoriteCityRepository);
 
   const processUserMessageUseCase = new ProcessUserMessageUseCase(
     llmProvider,
     weatherProvider,
     interactionLogger,
     conversationRepository,
-    userRepository
+    userRepository,
+    addFavoriteCityUseCase,
+    listFavoriteCitiesUseCase
   );
   const identifyUserUseCase = new IdentifyUserUseCase(userRepository);
   const synthesizeSpeechUseCase = new SynthesizeSpeechUseCase(speechProvider);
 
   const chatController = new ChatController(processUserMessageUseCase);
+  const favoriteCityController = new FavoriteCityController(
+    addFavoriteCityUseCase,
+    listFavoriteCitiesUseCase,
+    removeFavoriteCityUseCase
+  );
   const identifyUserController = new IdentifyUserController(identifyUserUseCase);
   const speechController = new SpeechController(synthesizeSpeechUseCase);
 
@@ -90,5 +110,12 @@ export const createContainer = (): AppContainer => {
     void postgresPool.end();
   };
 
-  return { env, chatController, identifyUserController, speechController, shutdown };
+  return {
+    env,
+    chatController,
+    favoriteCityController,
+    identifyUserController,
+    speechController,
+    shutdown
+  };
 };

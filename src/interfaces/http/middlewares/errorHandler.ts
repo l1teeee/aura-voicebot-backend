@@ -15,6 +15,8 @@ const UNIDENTIFIED_ERROR_DESCRIPTION = 'Error no identificado.';
 const STATUS_BY_DOMAIN_ERROR_CODE = new Map<string, number>([
   [DOMAIN_ERROR_CODES.validation, HTTP_STATUS.badRequest],
   [DOMAIN_ERROR_CODES.cityNotFound, HTTP_STATUS.badRequest],
+  [DOMAIN_ERROR_CODES.favoriteCityAlreadyExists, HTTP_STATUS.conflict],
+  [DOMAIN_ERROR_CODES.favoriteCityNotFound, HTTP_STATUS.notFound],
   [DOMAIN_ERROR_CODES.rateLimitExceeded, HTTP_STATUS.tooManyRequests],
   [DOMAIN_ERROR_CODES.llmUnavailable, HTTP_STATUS.serviceUnavailable],
   [DOMAIN_ERROR_CODES.externalService, HTTP_STATUS.serviceUnavailable]

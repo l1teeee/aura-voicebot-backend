@@ -6,7 +6,7 @@ const VARY_HEADER = 'Vary';
 const ALLOW_ORIGIN_HEADER = 'Access-Control-Allow-Origin';
 const ALLOW_METHODS_HEADER = 'Access-Control-Allow-Methods';
 const ALLOW_HEADERS_HEADER = 'Access-Control-Allow-Headers';
-const ALLOWED_METHODS = 'GET, POST, OPTIONS';
+const ALLOWED_METHODS = 'GET, POST, DELETE, OPTIONS';
 const ALLOWED_HEADERS = 'Content-Type';
 const PREFLIGHT_METHOD = 'OPTIONS';
 

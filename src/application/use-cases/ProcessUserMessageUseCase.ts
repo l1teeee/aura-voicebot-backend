@@ -21,7 +21,12 @@ import { UserMessage } from '../../domain/value-objects/UserMessage';
 import {
   ACTION_TYPES,
   FALLBACK_REPLY,
+  FAVORITE_CITY_LIST_FAILED_MESSAGE,
+  FAVORITE_CITY_SAVE_FAILED_MESSAGE,
+  IDENTIFICATION_REQUIRED_MESSAGE,
   INTERACTION_LOG_CONFIRMATION_MESSAGE,
+  INVALID_FAVORITE_CITY_ARGUMENTS_MESSAGE,
+  INVALID_FAVORITE_CITY_LIST_ARGUMENTS_MESSAGE,
   INVALID_LOG_ARGUMENTS_MESSAGE,
   INVALID_WEATHER_ARGUMENTS_MESSAGE,
   MAX_TOOL_ITERATIONS,
@@ -36,15 +41,20 @@ import { ProcessUserMessageInput } from '../dto/ProcessUserMessageInput';
 import { ProcessUserMessageAction, ProcessUserMessageOutput } from '../dto/ProcessUserMessageOutput';
 import { AURA_SYSTEM_PROMPT } from '../prompts/auraSystemPrompt';
 import {
+  addFavoriteCityToolArgumentsSchema,
   forecastToolArgumentsSchema,
+  listFavoriteCitiesToolArgumentsSchema,
   logInteractionToolArgumentsSchema,
   weatherToolArgumentsSchema
 } from '../tools/toolArgumentSchemas';
 import { AVAILABLE_TOOLS } from '../tools/toolCatalog';
+import { AddFavoriteCityUseCase } from './AddFavoriteCityUseCase';
+import { ListFavoriteCitiesUseCase } from './ListFavoriteCitiesUseCase';
 
 interface InteractionContext {
   readonly sessionId: SessionId;
   readonly userMessage: UserMessage;
+  readonly userId?: string;
 }
 
 interface ToolCallOutcome {
@@ -96,6 +106,9 @@ const buildErrorContent = (message: string): string => JSON.stringify({ error: m
 const describeWeatherFailure = (error: unknown): string =>
   error instanceof DomainError ? error.message : WEATHER_LOOKUP_FAILED_MESSAGE;
 
+const describeFavoriteCityFailure = (error: unknown, fallback: string): string =>
+  error instanceof DomainError ? error.message : fallback;
+
 const logToolFailure = (toolName: string, city: string, error: unknown): void => {
   const status = error instanceof ExternalServiceError ? ` status: ${String(error.status)}` : '';
   const detail = error instanceof Error ? error.message : String(error);
@@ -105,6 +118,10 @@ const logToolFailure = (toolName: string, city: string, error: unknown): void =>
 const buildAction = (outcome: ToolLoopOutcome): ProcessUserMessageAction | null => {
   if (outcome.weatherSnapshot !== null) {
     return { type: ACTION_TYPES.weatherLookup, data: { ...outcome.weatherSnapshot } };
+  }
+
+  if (outcome.toolsUsed.includes(TOOL_NAMES.addFavoriteCity)) {
+    return { type: ACTION_TYPES.favoriteCityAdded, data: {} };
   }
 
   if (outcome.toolsUsed.includes(TOOL_NAMES.logInteraction)) {
@@ -162,7 +179,9 @@ export class ProcessUserMessageUseCase {
     private readonly weatherProvider: WeatherProvider,
     private readonly interactionLogger: InteractionLogger,
     private readonly conversationRepository: ConversationRepository,
-    private readonly userRepository?: UserRepository
+    private readonly userRepository: UserRepository | undefined,
+    private readonly addFavoriteCity: AddFavoriteCityUseCase,
+    private readonly listFavoriteCities: ListFavoriteCitiesUseCase
   ) {}
 
   async execute(input: ProcessUserMessageInput): Promise<ProcessUserMessageOutput> {
@@ -172,7 +191,7 @@ export class ProcessUserMessageUseCase {
 
     conversation.addUserMessage(userMessage);
 
-    const context: InteractionContext = { sessionId, userMessage };
+    const context: InteractionContext = { sessionId, userMessage, userId: input.userId };
     const outcome = await this.runToolLoop(conversation, context);
     const reply = resolveReply(outcome);
 
@@ -300,6 +319,14 @@ export class ProcessUserMessageUseCase {
       return this.executeInteractionLog(call, context);
     }
 
+    if (call.toolName === TOOL_NAMES.addFavoriteCity) {
+      return this.executeAddFavoriteCity(call, context.userId);
+    }
+
+    if (call.toolName === TOOL_NAMES.listFavoriteCities) {
+      return this.executeListFavoriteCities(call, context.userId);
+    }
+
     return {
       result: buildToolResult(call, buildErrorContent(UNKNOWN_TOOL_MESSAGE)),
       executedToolName: null,
@@ -401,5 +428,95 @@ export class ProcessUserMessageUseCase {
       executedToolName: TOOL_NAMES.logInteraction,
       weatherSnapshot: null
     };
+  }
+
+  private async executeAddFavoriteCity(
+    call: LLMToolCall,
+    userId: string | undefined
+  ): Promise<ToolCallOutcome> {
+    const parsedArguments = addFavoriteCityToolArgumentsSchema.safeParse(call.arguments);
+
+    if (!parsedArguments.success) {
+      return {
+        result: buildToolResult(call, buildErrorContent(INVALID_FAVORITE_CITY_ARGUMENTS_MESSAGE)),
+        executedToolName: null,
+        weatherSnapshot: null
+      };
+    }
+
+    if (userId === undefined) {
+      return {
+        result: buildToolResult(call, buildErrorContent(IDENTIFICATION_REQUIRED_MESSAGE)),
+        executedToolName: TOOL_NAMES.addFavoriteCity,
+        weatherSnapshot: null
+      };
+    }
+
+    try {
+      const favoriteCity = await this.addFavoriteCity.execute({
+        userId,
+        city: parsedArguments.data.city
+      });
+
+      return {
+        result: buildToolResult(call, JSON.stringify(favoriteCity)),
+        executedToolName: TOOL_NAMES.addFavoriteCity,
+        weatherSnapshot: null
+      };
+    } catch (error: unknown) {
+      return {
+        result: buildToolResult(
+          call,
+          buildErrorContent(describeFavoriteCityFailure(error, FAVORITE_CITY_SAVE_FAILED_MESSAGE))
+        ),
+        executedToolName: TOOL_NAMES.addFavoriteCity,
+        weatherSnapshot: null
+      };
+    }
+  }
+
+  private async executeListFavoriteCities(
+    call: LLMToolCall,
+    userId: string | undefined
+  ): Promise<ToolCallOutcome> {
+    const parsedArguments = listFavoriteCitiesToolArgumentsSchema.safeParse(call.arguments);
+
+    if (!parsedArguments.success) {
+      return {
+        result: buildToolResult(
+          call,
+          buildErrorContent(INVALID_FAVORITE_CITY_LIST_ARGUMENTS_MESSAGE)
+        ),
+        executedToolName: null,
+        weatherSnapshot: null
+      };
+    }
+
+    if (userId === undefined) {
+      return {
+        result: buildToolResult(call, buildErrorContent(IDENTIFICATION_REQUIRED_MESSAGE)),
+        executedToolName: TOOL_NAMES.listFavoriteCities,
+        weatherSnapshot: null
+      };
+    }
+
+    try {
+      const favoriteCities = await this.listFavoriteCities.execute({ userId });
+
+      return {
+        result: buildToolResult(call, JSON.stringify(favoriteCities)),
+        executedToolName: TOOL_NAMES.listFavoriteCities,
+        weatherSnapshot: null
+      };
+    } catch (error: unknown) {
+      return {
+        result: buildToolResult(
+          call,
+          buildErrorContent(describeFavoriteCityFailure(error, FAVORITE_CITY_LIST_FAILED_MESSAGE))
+        ),
+        executedToolName: TOOL_NAMES.listFavoriteCities,
+        weatherSnapshot: null
+      };
+    }
   }
 }

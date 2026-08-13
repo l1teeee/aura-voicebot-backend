@@ -1,7 +1,9 @@
 export const HTTP_STATUS = {
   ok: 200,
+  created: 201,
   noContent: 204,
   badRequest: 400,
+  conflict: 409,
   notFound: 404,
   tooManyRequests: 429,
   internalServerError: 500,

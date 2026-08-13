@@ -22,11 +22,13 @@ Herramientas que el modelo puede invocar:
 |------------------------|--------------------------------------------------------------------------|
 | `consultarClima`       | Consulta el clima actual de una ciudad en OpenWeatherMap y lo normaliza a un tipo del dominio (`WeatherSnapshot`). El LLM nunca ve el payload crudo del tercero. |
 | `consultarPronostico`  | Consulta el pronóstico a cinco días de una ciudad en OpenWeatherMap (mínima, máxima, cielo y probabilidad de lluvia por día) y lo normaliza al dominio. Se usa para preguntas sobre el tiempo futuro, no el de ahora mismo. |
+| `guardarCiudadFavorita` | Guarda una ciudad en las favoritas del usuario identificado, incluso cuando se refiere a una ciudad mencionada recientemente en la conversación. |
+| `listarCiudadesFavoritas` | Recupera las ciudades favoritas del usuario identificado para responderlas por voz. |
 | `registrarInteraccion` | Envía la interacción al webhook de registro. Es *fire-and-forget*: si falla, se anota en consola y la conversación continúa. |
 
-Lo que este backend **no** hace: autenticación real, frontend, transcripción de audio, síntesis de voz, WebSockets ni streaming.
+Lo que este backend **no** hace: autenticación real, frontend, transcripción de audio ni WebSockets.
 
-**Stack:** Node.js 20+, TypeScript `strict`, Express 4, SDK oficial `openai` v4, `zod`, `dotenv` y `pg`. Sin ORM ni Docker. PostgreSQL se usa para identificación e historial persistente; el chat anónimo conserva su repositorio en memoria.
+**Stack:** Node.js 20+, TypeScript `strict`, Express 4, SDK oficial `openai` v4, `zod`, `dotenv` y `pg`. Sin ORM ni Docker. PostgreSQL se usa para identificación, historial persistente y ciudades favoritas; el chat anónimo conserva su repositorio en memoria.
 
 ---
 
@@ -39,17 +41,18 @@ Clean Architecture **pragmática**: se definen puertos solo donde existe una imp
 ```
 src/
   domain/                        Núcleo. No importa nada: ni Express, ni OpenAI, ni zod.
-    entities/                    Conversation, ConversationTurn, Message, User
+    entities/                    Conversation, ConversationTurn, FavoriteCity, Message, User
     value-objects/               SessionId, UserMessage
     ports/                       LLMProvider, SpeechProvider, WeatherProvider,
-                                 InteractionLogger, ConversationRepository, UserRepository
+                                 InteractionLogger, ConversationRepository,
+                                 FavoriteCityRepository, UserRepository
     errors/                      DomainError + subtipos tipados
     constants.ts
 
   application/                   Orquestación. Importa solo domain (+ zod para validar
                                  los argumentos que llegan del LLM).
-    use-cases/                   ProcessUserMessageUseCase, SynthesizeSpeechUseCase
-    dto/                         ProcessUserMessageInput / Output, SynthesizeSpeechInput
+    use-cases/                   Casos de uso de chat, voz, identificación y favoritos
+    dto/                         DTOs de entrada y salida por caso de uso
     prompts/                     auraSystemPrompt
     tools/                       toolCatalog
     constants.ts
@@ -59,14 +62,14 @@ src/
     speech/                      OpenAITextToSpeechProvider
     weather/                     OpenWeatherMapProvider
     logging/                     WebhookInteractionLogger
-    persistence/                 InMemoryConversationRepository, PostgresUserRepository
+    persistence/                 Repositorios de conversación, usuarios y favoritos
     http/                        HttpClient (timeout + reintentos)
     constants.ts
 
   interfaces/                    Adaptador HTTP. Importa application y domain,
     http/                        nunca infrastructure.
-      routes/                    chat.routes.ts, health.routes.ts, identify.routes.ts,
-                                 speech.routes.ts
+      routes/                    chat.routes.ts, favoriteCity.routes.ts, health.routes.ts,
+                                 identify.routes.ts, speech.routes.ts
       controllers/               ChatController, IdentifyUserController, SpeechController
       middlewares/               errorHandler, rateLimiter, cors,
                                  requestLogger, validateBody
@@ -130,7 +133,7 @@ Los errores de herramienta (`CITY_NOT_FOUND`, `EXTERNAL_SERVICE_ERROR`) **no rom
 
 ### 3.1 Puertos solo para servicios externos y repositorios
 
-Un puerto es un contrato que aísla una decisión que puede cambiar. Estos seis tienen una razón concreta y presente para existir:
+Un puerto es un contrato que aísla una decisión que puede cambiar. Estos siete tienen una razón concreta y presente para existir:
 
 | Puerto                   | Razón de existir                                                                  |
 |--------------------------|-----------------------------------------------------------------------------------|
@@ -139,6 +142,7 @@ Un puerto es un contrato que aísla una decisión que puede cambiar. Estos seis 
 | `WeatherProvider`        | OpenWeatherMap tiene alternativas directas (AEMET, WeatherAPI) con el mismo contrato. |
 | `InteractionLogger`      | Hoy es un webhook de Pipedream; mañana puede ser BigQuery, S3 o una cola.          |
 | `ConversationRepository` | Hoy es memoria; en cuanto haya más de una instancia debe ser Redis.                |
+| `FavoriteCityRepository` | Aísla la persistencia PostgreSQL de las operaciones sobre ciudades favoritas.      |
 | `UserRepository`         | Aísla PostgreSQL y concentra la identificación, el historial y la asociación opcional del chat. |
 
 No se han creado puertos ni DTOs para lo que no cambia. No hay mappers entre estructuras idénticas, ni una interfaz por clase "por simetría". Una abstracción sin al menos una razón concreta de existir es coste de mantenimiento sin retorno.
@@ -234,12 +238,15 @@ Flujo de producción: `npm install` → `npm run build` → `npm start`.
 
 Base URL en local: `http://localhost:3000`. Todas las rutas cuelgan del prefijo `/api`.
 
-| Método | Ruta           | Body                                          | Respuesta 200                                                        |
-|--------|----------------|-----------------------------------------------|----------------------------------------------------------------------|
-| `GET`  | `/api/health`  | —                                             | `{ "status": "ok", "uptime": 1234 }` (`uptime` en segundos enteros)  |
-| `POST` | `/api/chat`    | `{ "message": string, "sessionId": string }`  | `{ "reply": string, "sessionId": string, "action"?: { "type": string, "data": object } }` |
-| `POST` | `/api/identify` | `{ "name": string }`                         | `{ "userId": string, "isReturning": boolean, "conversations": [...] }` |
-| `POST` | `/api/speech`  | `{ "text": string }`                           | Audio MP3 (`Content-Type: audio/mpeg`) transmitido por streaming.            |
+| Método | Ruta                           | Body                                          | Respuesta                                                        |
+|--------|--------------------------------|-----------------------------------------------|------------------------------------------------------------------|
+| `GET`  | `/api/health`                  | —                                             | `200` `{ "status": "ok", "uptime": 1234 }` (`uptime` en segundos enteros) |
+| `POST` | `/api/chat`                    | `{ "message": string, "sessionId": string }` | `200` `{ "reply": string, "sessionId": string, "action"?: { "type": string, "data": object } }` |
+| `POST` | `/api/identify`                | `{ "name": string }`                        | `200` `{ "userId": string, "isReturning": boolean, "conversations": [...] }` |
+| `POST` | `/api/speech`                  | `{ "text": string }`                        | `200` Audio MP3 (`Content-Type: audio/mpeg`) transmitido por streaming. |
+| `POST` | `/api/favorite-cities`         | `{ "userId": "uuid", "city": "string" }` | `201` `{ "id": "uuid", "city": "string", "createdAt": "ISO timestamp" }` |
+| `GET`  | `/api/favorite-cities/:userId` | —                                             | `200` `{ "cities": [{ "id": "uuid", "city": "string", "createdAt": "ISO timestamp" }] }` |
+| `DELETE` | `/api/favorite-cities/:id`   | —                                             | `204` sin cuerpo. |
 
 Restricciones del body de `/api/chat`:
 
@@ -252,6 +259,8 @@ Restricciones del body de `/api/chat`:
 `action` se **omite del JSON** si el modelo no invocó ninguna herramienta. Cuando aparece, sirve para que el frontend muestre contexto visual (por ejemplo, una tarjeta de clima).
 
 El body de `/api/speech` solo admite `text`, que se recorta y debe contener entre 1 y 800 caracteres. La respuesta no se almacena en caché.
+
+`POST /api/favorite-cities` exige el `userId` devuelto por `/api/identify` y una ciudad de 2 a 80 caracteres. La ciudad se muestra en Title Case y se compara mediante una clave normalizada con `trim` y minúsculas. El listado se ordena desde la favorita más reciente y devuelve `cities: []` cuando no hay resultados.
 
 ### Ejemplo
 
@@ -304,7 +313,9 @@ Todos los errores comparten exactamente la misma forma:
 |--------------------------|------|-----------------------------------------------------------------------|
 | `VALIDATION_ERROR`       | 400  | Body ausente o mal formado, identificadores inválidos o campos de texto fuera de sus límites. |
 | `CITY_NOT_FOUND`         | 400  | La ciudad solicitada no existe en el proveedor de clima.              |
+| `FAVORITE_CITY_NOT_FOUND` | 404 | La ciudad favorita que se intentó borrar no existe.                    |
 | `NOT_FOUND`              | 404  | La ruta solicitada no existe.                                         |
+| `FAVORITE_CITY_ALREADY_EXISTS` | 409 | La ciudad ya estaba guardada para ese usuario.                    |
 | `RATE_LIMIT_EXCEEDED`    | 429  | Se superó el límite de peticiones por IP.                             |
 | `LLM_UNAVAILABLE`        | 503  | OpenAI no responde, agota el timeout o devuelve un error irrecuperable. |
 | `EXTERNAL_SERVICE_ERROR` | 503  | Un servicio externo, incluida la síntesis de voz, no respondió correctamente. |

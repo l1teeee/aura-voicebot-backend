@@ -1,6 +1,7 @@
 import { ValidationError } from '../../domain/errors/ValidationError';
 import { UserRepository } from '../../domain/ports/UserRepository';
 import { MIN_USER_NAME_LENGTH, MAX_USER_NAME_LENGTH } from '../../domain/constants';
+import { normalizeKey } from '../../domain/utils/normalizeKey';
 import { IdentifyUserInput } from '../dto/IdentifyUserInput';
 import {
   IdentifyUserConversation,
@@ -9,8 +10,6 @@ import {
 } from '../dto/IdentifyUserOutput';
 
 const invalidNameMessage = 'El nombre debe tener entre 2 y 40 caracteres.';
-
-const normalizeName = (rawName: string): string => rawName.trim().toLowerCase();
 
 const mapConversation = (conversation: {
   readonly sessionId: string;
@@ -42,7 +41,7 @@ export class IdentifyUserUseCase {
   constructor(private readonly userRepository: UserRepository) {}
 
   async execute(input: IdentifyUserInput): Promise<IdentifyUserOutput> {
-    const name = normalizeName(input.name);
+    const name = normalizeKey(input.name);
 
     if (name.length < MIN_USER_NAME_LENGTH || name.length > MAX_USER_NAME_LENGTH) {
       throw new ValidationError(invalidNameMessage);

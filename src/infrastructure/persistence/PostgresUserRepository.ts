@@ -2,6 +2,7 @@ import type { Pool, QueryResultRow } from 'pg';
 import { User } from '../../domain/entities/User';
 import type { UserInteraction } from '../../domain/entities/User';
 import type { UserRepository } from '../../domain/ports/UserRepository';
+import { normalizeKey } from '../../domain/utils/normalizeKey';
 
 const FIND_USER_BY_NAME_QUERY = `
   SELECT
@@ -103,7 +104,7 @@ export class PostgresUserRepository implements UserRepository {
   constructor(private readonly pool: Pool) {}
 
   async findByName(name: string): Promise<User | null> {
-    const normalizedName = name.trim().toLowerCase();
+    const normalizedName = normalizeKey(name);
     const result = await this.pool.query<UserRow>(FIND_USER_BY_NAME_QUERY, [normalizedName]);
     const firstRow = result.rows[0];
 
@@ -111,7 +112,7 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   async create(name: string): Promise<User> {
-    const normalizedName = name.trim().toLowerCase();
+    const normalizedName = normalizeKey(name);
     const result = await this.pool.query<CreatedUserRow>(CREATE_USER_QUERY, [
       normalizedName,
       normalizedName

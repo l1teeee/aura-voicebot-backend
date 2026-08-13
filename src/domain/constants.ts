@@ -21,12 +21,18 @@ export const MIN_USER_NAME_LENGTH: number = 2;
 
 export const MAX_USER_NAME_LENGTH: number = 40;
 
+export const MIN_FAVORITE_CITY_NAME_LENGTH: number = 2;
+
+export const MAX_FAVORITE_CITY_NAME_LENGTH: number = 80;
+
 export const UUID_V4_PATTERN: RegExp =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export const DOMAIN_ERROR_CODES = {
   validation: 'VALIDATION_ERROR',
   cityNotFound: 'CITY_NOT_FOUND',
+  favoriteCityAlreadyExists: 'FAVORITE_CITY_ALREADY_EXISTS',
+  favoriteCityNotFound: 'FAVORITE_CITY_NOT_FOUND',
   rateLimitExceeded: 'RATE_LIMIT_EXCEEDED',
   llmUnavailable: 'LLM_UNAVAILABLE',
   externalService: 'EXTERNAL_SERVICE_ERROR'

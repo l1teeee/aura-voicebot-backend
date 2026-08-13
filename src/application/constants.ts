@@ -5,12 +5,15 @@ export const MAX_TOOL_ITERATIONS: number = 3;
 export const TOOL_NAMES = {
   weatherLookup: 'consultarClima',
   forecastLookup: 'consultarPronostico',
-  logInteraction: 'registrarInteraccion'
+  logInteraction: 'registrarInteraccion',
+  addFavoriteCity: 'guardarCiudadFavorita',
+  listFavoriteCities: 'listarCiudadesFavoritas'
 } as const;
 
 export const ACTION_TYPES = {
   weatherLookup: 'weather_lookup',
-  interactionLog: 'interaction_log'
+  interactionLog: 'interaction_log',
+  favoriteCityAdded: 'favorite_city_added'
 } as const;
 
 export type ActionType = (typeof ACTION_TYPES)[keyof typeof ACTION_TYPES];
@@ -36,6 +39,21 @@ export const INVALID_WEATHER_ARGUMENTS_MESSAGE: string =
 
 export const INVALID_LOG_ARGUMENTS_MESSAGE: string =
   'No llegó un resumen válido, así que no se registró nada.';
+
+export const INVALID_FAVORITE_CITY_ARGUMENTS_MESSAGE: string =
+  'No llegó una ciudad válida para guardar. Pídesela a la persona en una sola frase.';
+
+export const INVALID_FAVORITE_CITY_LIST_ARGUMENTS_MESSAGE: string =
+  'No se necesitan datos para consultar las ciudades favoritas.';
+
+export const IDENTIFICATION_REQUIRED_MESSAGE: string =
+  'La persona necesita identificarse primero para usar ciudades favoritas.';
+
+export const FAVORITE_CITY_SAVE_FAILED_MESSAGE: string =
+  'No se pudo guardar la ciudad favorita. Explícalo con naturalidad y sugiere intentarlo de nuevo.';
+
+export const FAVORITE_CITY_LIST_FAILED_MESSAGE: string =
+  'No se pudieron consultar las ciudades favoritas. Explícalo con naturalidad y sugiere intentarlo de nuevo.';
 
 export const WEATHER_LOOKUP_FAILED_MESSAGE: string =
   'El servicio del clima no está disponible ahora mismo.';

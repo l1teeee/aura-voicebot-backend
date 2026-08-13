@@ -37,6 +37,24 @@ const forecastLookupParameters: JsonSchemaObject = {
   required: ['city']
 };
 
+const addFavoriteCityParameters: JsonSchemaObject = {
+  type: 'object',
+  properties: {
+    city: {
+      type: 'string',
+      description:
+        'Nombre de la ciudad que la persona quiere guardar como favorita. Si dice esta ciudad o se refiere a ella de forma implícita, usa la ciudad mencionada más recientemente en la conversación.'
+    }
+  },
+  required: ['city']
+};
+
+const listFavoriteCitiesParameters: JsonSchemaObject = {
+  type: 'object',
+  properties: {},
+  required: []
+};
+
 const logInteractionParameters: JsonSchemaObject = {
   type: 'object',
   properties: {
@@ -61,6 +79,18 @@ export const AVAILABLE_TOOLS: readonly LLMToolDefinition[] = [
     description:
       'Consulta el pronóstico del tiempo de los próximos cinco días de una ciudad. Devuelve una lista de días, cada uno con una etiqueta que dice hoy, mañana o el nombre del día de la semana, la temperatura mínima y máxima, el estado del cielo y la probabilidad de lluvia en porcentaje. Úsala siempre que la persona pregunte por el tiempo de mañana, del fin de semana o de cualquier día futuro, o si va a llover más adelante. Para el tiempo de ahora mismo usa consultarClima. No inventes nunca estos datos.',
     parameters: forecastLookupParameters
+  },
+  {
+    name: TOOL_NAMES.addFavoriteCity,
+    description:
+      'Guarda una ciudad como favorita de la persona identificada. Úsala cuando pida guardar, añadir o agregar una ciudad a sus favoritas, incluso si se refiere a una ciudad mencionada recientemente como esta ciudad.',
+    parameters: addFavoriteCityParameters
+  },
+  {
+    name: TOOL_NAMES.listFavoriteCities,
+    description:
+      'Consulta las ciudades favoritas de la persona identificada. Úsala cuando pregunte cuáles son sus ciudades favoritas o pida verlas.',
+    parameters: listFavoriteCitiesParameters
   },
   {
     name: TOOL_NAMES.logInteraction,

@@ -12,6 +12,7 @@ import { errorHandler } from './interfaces/http/middlewares/errorHandler';
 import { RateLimiter, createRateLimiter } from './interfaces/http/middlewares/rateLimiter';
 import { requestLogger } from './interfaces/http/middlewares/requestLogger';
 import { createChatRouter } from './interfaces/http/routes/chat.routes';
+import { createFavoriteCityRouter } from './interfaces/http/routes/favoriteCity.routes';
 import { createHealthRouter } from './interfaces/http/routes/health.routes';
 import { createIdentifyRouter } from './interfaces/http/routes/identify.routes';
 import { createSpeechRouter } from './interfaces/http/routes/speech.routes';
@@ -20,6 +21,7 @@ const HEALTH_ROUTE_PREFIX = '/api/health';
 const CHAT_ROUTE_PREFIX = '/api/chat';
 const IDENTIFY_ROUTE_PREFIX = '/api/identify';
 const SPEECH_ROUTE_PREFIX = '/api/speech';
+const FAVORITE_CITY_ROUTE_PREFIX = '/api/favorite-cities';
 const JSON_BODY_LIMIT = '16kb';
 const TRUSTED_PROXY_HOP_COUNT = 1;
 const SHUTDOWN_SIGNALS = ['SIGTERM', 'SIGINT'] as const;
@@ -57,6 +59,10 @@ const createApp = (
 
   app.use(HEALTH_ROUTE_PREFIX, createHealthRouter());
   app.use(IDENTIFY_ROUTE_PREFIX, createIdentifyRouter(container.identifyUserController));
+  app.use(
+    FAVORITE_CITY_ROUTE_PREFIX,
+    createFavoriteCityRouter(container.favoriteCityController)
+  );
   app.use(
     CHAT_ROUTE_PREFIX,
     chatRateLimiter.middleware,
