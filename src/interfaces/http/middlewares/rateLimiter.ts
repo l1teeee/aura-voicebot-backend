@@ -20,7 +20,9 @@ export interface RateLimiter {
   readonly stop: () => void;
 }
 
-export const createRateLimiter = (): RateLimiter => {
+export const createRateLimiter = (
+  maxRequests: number = RATE_LIMIT_MAX_REQUESTS
+): RateLimiter => {
   const windowsByClient = new Map<string, ClientWindow>();
 
   const hasExpired = (clientWindow: ClientWindow, now: number): boolean =>
@@ -55,7 +57,7 @@ export const createRateLimiter = (): RateLimiter => {
       return;
     }
 
-    if (clientWindow.count >= RATE_LIMIT_MAX_REQUESTS) {
+    if (clientWindow.count >= maxRequests) {
       next(new RateLimitExceededError(RATE_LIMIT_EXCEEDED_MESSAGE));
       return;
     }

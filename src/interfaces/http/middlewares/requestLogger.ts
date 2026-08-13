@@ -15,7 +15,7 @@ export const requestLogger: RequestHandler = (
     const durationMs = (elapsedNanoseconds / NANOSECONDS_PER_MILLISECOND).toFixed(
       REQUEST_DURATION_DECIMAL_PLACES
     );
-    console.log(`${req.method} ${req.originalUrl} ${res.statusCode} ${durationMs}ms`);
+    console.info(`${req.method} ${req.originalUrl} ${res.statusCode} ${durationMs}ms`);
   });
 
   next();

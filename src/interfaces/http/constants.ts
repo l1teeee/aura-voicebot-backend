@@ -17,6 +17,10 @@ export const RATE_LIMIT_WINDOW_MS =
 
 export const RATE_LIMIT_MAX_REQUESTS = 30;
 
+// La sintesis de voz se cobra por caracter, asi que lleva su propio cupo en vez
+// de compartir el del chat: una respuesta hablada gasta una peticion de cada uno.
+export const SPEECH_RATE_LIMIT_MAX_REQUESTS = 30;
+
 export const RATE_LIMIT_CLEANUP_INTERVAL_MS = RATE_LIMIT_WINDOW_MS;
 
 export const NANOSECONDS_PER_MILLISECOND = 1_000_000;

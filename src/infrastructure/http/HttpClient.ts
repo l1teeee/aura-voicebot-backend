@@ -85,7 +85,7 @@ export class HttpClient {
 
   async request(url: string, options: HttpRequestOptions = {}): Promise<HttpResponse> {
     let attempt = 0;
-    while (true) {
+    for (;;) {
       const result = await this.executeAttempt(url, options);
       if (result.kind === 'success') {
         return result.response;

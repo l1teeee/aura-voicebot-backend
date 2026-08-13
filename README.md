@@ -38,21 +38,22 @@ src/
   domain/                        Núcleo. No importa nada: ni Express, ni OpenAI, ni zod.
     entities/                    Conversation, ConversationTurn, Message, User
     value-objects/               SessionId, UserMessage
-    ports/                       LLMProvider, WeatherProvider,
+    ports/                       LLMProvider, SpeechProvider, WeatherProvider,
                                  InteractionLogger, ConversationRepository, UserRepository
     errors/                      DomainError + subtipos tipados
     constants.ts
 
   application/                   Orquestación. Importa solo domain (+ zod para validar
                                  los argumentos que llegan del LLM).
-    use-cases/                   ProcessUserMessageUseCase
-    dto/                         ProcessUserMessageInput / Output
+    use-cases/                   ProcessUserMessageUseCase, SynthesizeSpeechUseCase
+    dto/                         ProcessUserMessageInput / Output, SynthesizeSpeechInput
     prompts/                     auraSystemPrompt
     tools/                       toolCatalog
     constants.ts
 
   infrastructure/                Implementaciones concretas de los puertos.
     llm/                         OpenAILLMProvider
+    speech/                      OpenAITextToSpeechProvider
     weather/                     OpenWeatherMapProvider
     logging/                     WebhookInteractionLogger
     persistence/                 InMemoryConversationRepository, PostgresUserRepository
@@ -61,11 +62,13 @@ src/
 
   interfaces/                    Adaptador HTTP. Importa application y domain,
     http/                        nunca infrastructure.
-      routes/                    chat.routes.ts, health.routes.ts, identify.routes.ts
-      controllers/               ChatController, IdentifyUserController
+      routes/                    chat.routes.ts, health.routes.ts, identify.routes.ts,
+                                 speech.routes.ts
+      controllers/               ChatController, IdentifyUserController, SpeechController
       middlewares/               errorHandler, rateLimiter, cors,
                                  requestLogger, validateBody
-      schemas/                   chatRequestSchema, identifyUserRequestSchema (zod)
+      schemas/                   chatRequestSchema, identifyUserRequestSchema,
+                                 speechRequestSchema (zod)
       constants.ts
 
   config/env.ts                  Variables de entorno validadas con zod al arranque.
@@ -122,13 +125,14 @@ Los errores de herramienta (`CITY_NOT_FOUND`, `EXTERNAL_SERVICE_ERROR`) **no rom
 
 ## 3. Decisiones arquitectónicas y su justificación
 
-### 3.1 Puertos solo para LLM, clima, logger y repositorio
+### 3.1 Puertos solo para servicios externos y repositorios
 
-Un puerto es un contrato que aísla una decisión que puede cambiar. Estas cinco tienen una razón concreta y presente para existir:
+Un puerto es un contrato que aísla una decisión que puede cambiar. Estos seis tienen una razón concreta y presente para existir:
 
 | Puerto                   | Razón de existir                                                                  |
 |--------------------------|-----------------------------------------------------------------------------------|
 | `LLMProvider`            | OpenAI podría sustituirse por Anthropic, Groq o un modelo local sin tocar el caso de uso. |
+| `SpeechProvider`         | La síntesis de voz puede cambiar de OpenAI a otro proveedor sin tocar HTTP ni el caso de uso. |
 | `WeatherProvider`        | OpenWeatherMap tiene alternativas directas (AEMET, WeatherAPI) con el mismo contrato. |
 | `InteractionLogger`      | Hoy es un webhook de Pipedream; mañana puede ser BigQuery, S3 o una cola.          |
 | `ConversationRepository` | Hoy es memoria; en cuanto haya más de una instancia debe ser Redis.                |
@@ -176,7 +180,7 @@ Justificación: el registro es observabilidad, no parte del contrato con el usua
 - **Errores de dominio tipados.** Solo el `errorHandler` conoce códigos HTTP; el dominio habla de `ValidationError`, `CityNotFoundError`, `LLMUnavailableError`… Ninguna otra capa traduce a HTTP.
 - **Nunca se filtra nada sensible.** Ni stack traces, ni claves de API, ni texto crudo de un servicio externo salen en una respuesta, un log o un mensaje de error de arranque. El validador de entorno lista qué variable falla y por qué, nunca su valor.
 - **Fallo rápido al arrancar.** `config/env.ts` valida el entorno con zod antes de abrir el puerto. Si falta una clave, el proceso muere con un mensaje accionable en lugar de fallar en la primera petición del usuario.
-- **Rate limit solo en `/api/chat`.** Protege la cuota de OpenAI, que es el recurso caro. `/api/health` queda libre porque las plataformas de despliegue lo consultan constantemente y no debe consumir cupo ni tumbar el health check.
+- **Rate limits independientes en `/api/chat` y `/api/speech`.** Cada ruta protege por separado su cuota de OpenAI. `/api/health` queda libre porque las plataformas de despliegue lo consultan constantemente y no debe consumir cupo ni tumbar el health check.
 
 ---
 
@@ -232,6 +236,7 @@ Base URL en local: `http://localhost:3000`. Todas las rutas cuelgan del prefijo 
 | `GET`  | `/api/health`  | —                                             | `{ "status": "ok", "uptime": 1234 }` (`uptime` en segundos enteros)  |
 | `POST` | `/api/chat`    | `{ "message": string, "sessionId": string }`  | `{ "reply": string, "sessionId": string, "action"?: { "type": string, "data": object } }` |
 | `POST` | `/api/identify` | `{ "name": string }`                         | `{ "userId": string, "isReturning": boolean, "conversations": [...] }` |
+| `POST` | `/api/speech`  | `{ "text": string }`                           | Audio MP3 (`Content-Type: audio/mpeg`) transmitido por streaming.            |
 
 Restricciones del body de `/api/chat`:
 
@@ -242,6 +247,8 @@ Restricciones del body de `/api/chat`:
 | `userId`    | string | Opcional. UUID v4 devuelto por `/api/identify`. Si no viene, el comportamiento actual no cambia. |
 
 `action` se **omite del JSON** si el modelo no invocó ninguna herramienta. Cuando aparece, sirve para que el frontend muestre contexto visual (por ejemplo, una tarjeta de clima).
+
+El body de `/api/speech` solo admite `text`, que se recorta y debe contener entre 1 y 800 caracteres. La respuesta no se almacena en caché.
 
 ### Ejemplo
 
@@ -273,6 +280,15 @@ curl -X POST http://localhost:3000/api/chat \
 }
 ```
 
+Para sintetizar una respuesta y guardarla como MP3:
+
+```bash
+curl -X POST http://localhost:3000/api/speech \
+  -H "Content-Type: application/json" \
+  -d '{"text":"En Valencia hay 24 grados y cielo despejado."}' \
+  --output aura.mp3
+```
+
 ### Errores
 
 Todos los errores comparten exactamente la misma forma:
@@ -283,12 +299,12 @@ Todos los errores comparten exactamente la misma forma:
 
 | Código                   | HTTP | Cuándo ocurre                                                        |
 |--------------------------|------|-----------------------------------------------------------------------|
-| `VALIDATION_ERROR`       | 400  | Body ausente o mal formado, `sessionId` o `userId` que no es UUID v4, `message` fuera de 1–1000 caracteres o `name` fuera de 2–40 caracteres. |
+| `VALIDATION_ERROR`       | 400  | Body ausente o mal formado, identificadores inválidos o campos de texto fuera de sus límites. |
 | `CITY_NOT_FOUND`         | 400  | La ciudad solicitada no existe en el proveedor de clima.              |
 | `NOT_FOUND`              | 404  | La ruta solicitada no existe.                                         |
 | `RATE_LIMIT_EXCEEDED`    | 429  | Se superó el límite de peticiones por IP.                             |
 | `LLM_UNAVAILABLE`        | 503  | OpenAI no responde, agota el timeout o devuelve un error irrecuperable. |
-| `EXTERNAL_SERVICE_ERROR` | 503  | Un servicio externo (clima, webhook) falló tras el reintento.          |
+| `EXTERNAL_SERVICE_ERROR` | 503  | Un servicio externo, incluida la síntesis de voz, no respondió correctamente. |
 | `INTERNAL_ERROR`         | 500  | Cualquier error no previsto. Mensaje genérico en español.              |
 
 Nunca se expone un stack trace, una clave de API ni el texto crudo de un servicio externo.
@@ -298,6 +314,7 @@ Nunca se expone un stack trace, una clave de API ni el texto crudo de un servici
 | Límite                                | Valor        | Por qué                                       |
 |---------------------------------------|--------------|-----------------------------------------------|
 | Peticiones por IP a `/api/chat`       | 30 por minuto | Protege la cuota de OpenAI.                  |
+| Peticiones por IP a `/api/speech`     | 30 por minuto | Limita por separado el coste de síntesis.    |
 | Iteraciones de herramientas por turno | 3            | Evita bucles infinitos de tool calling.       |
 | Turnos guardados por conversación     | 20           | Acota el tamaño del contexto y el coste.      |
 | TTL de una sesión inactiva            | 30 minutos   | Libera memoria de sesiones abandonadas.       |
@@ -355,6 +372,8 @@ Se validan con zod al arrancar. Si falta alguna obligatoria o es inválida, el p
 | `NODE_ENV`             | No          | `development` | `development`, `production` o `test`.                                                                             |
 | `OPENAI_API_KEY`       | **Sí**      | —             | Clave de OpenAI. Créala en <https://platform.openai.com/api-keys>. Requiere saldo o plan activo.                    |
 | `OPENAI_MODEL`         | No          | `gpt-4o-mini` | Modelo de chat. `gpt-4o-mini` es el equilibrio recomendado entre coste, latencia y calidad de tool calling.        |
+| `OPENAI_TTS_MODEL`     | No          | `gpt-4o-mini-tts` | Modelo de síntesis de voz. Debe admitir instrucciones de tono en lenguaje natural.                             |
+| `OPENAI_TTS_VOICE`     | No          | `coral`       | Voz de síntesis. Voces integradas: `alloy`, `ash`, `ballad`, `coral`, `echo`, `fable`, `onyx`, `nova`, `sage`, `shimmer`, `verse`, `marin` y `cedar`. |
 | `OPENWEATHER_API_KEY`  | **Sí**      | —             | Clave de OpenWeatherMap. Regístrate gratis y créala en <https://home.openweathermap.org/api_keys>. Tarda unos minutos en activarse tras crearla. |
 | `OPENWEATHER_BASE_URL` | **Sí**      | —             | URL base de la API, sin barra final: `https://api.openweathermap.org/data/2.5`.                                    |
 | `LOG_WEBHOOK_URL`      | **Sí**      | —             | Endpoint que recibe el registro de cada interacción. Crea uno gratis en <https://pipedream.com/requestbin> o RequestBin. |
@@ -382,7 +401,7 @@ Antes de desplegar, ten a mano las cuatro claves obligatorias y el origen del fr
    | Start Command     | `npm start`                  |
    | Health Check Path | `/api/health`                |
 
-3. En **Environment → Environment Variables**, añade `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENWEATHER_API_KEY`, `OPENWEATHER_BASE_URL`, `LOG_WEBHOOK_URL`, `ALLOWED_ORIGIN` y `NODE_ENV=production`.
+3. En **Environment → Environment Variables**, añade `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_TTS_MODEL`, `OPENAI_TTS_VOICE`, `OPENWEATHER_API_KEY`, `OPENWEATHER_BASE_URL`, `LOG_WEBHOOK_URL`, `ALLOWED_ORIGIN` y `NODE_ENV=production`.
    **No definas `PORT`:** Render la inyecta y sobrescribirla rompe el despliegue.
 4. Despliega y comprueba `https://<tu-servicio>.onrender.com/api/health`.
 

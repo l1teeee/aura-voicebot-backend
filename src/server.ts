@@ -5,6 +5,7 @@ import {
   HTTP_STATUS,
   NOT_FOUND_ERROR_CODE,
   NOT_FOUND_ERROR_MESSAGE,
+  SPEECH_RATE_LIMIT_MAX_REQUESTS,
 } from './interfaces/http/constants';
 import { createCorsMiddleware } from './interfaces/http/middlewares/cors';
 import { errorHandler } from './interfaces/http/middlewares/errorHandler';
@@ -13,10 +14,12 @@ import { requestLogger } from './interfaces/http/middlewares/requestLogger';
 import { createChatRouter } from './interfaces/http/routes/chat.routes';
 import { createHealthRouter } from './interfaces/http/routes/health.routes';
 import { createIdentifyRouter } from './interfaces/http/routes/identify.routes';
+import { createSpeechRouter } from './interfaces/http/routes/speech.routes';
 
 const HEALTH_ROUTE_PREFIX = '/api/health';
 const CHAT_ROUTE_PREFIX = '/api/chat';
 const IDENTIFY_ROUTE_PREFIX = '/api/identify';
+const SPEECH_ROUTE_PREFIX = '/api/speech';
 const JSON_BODY_LIMIT = '16kb';
 const TRUSTED_PROXY_HOP_COUNT = 1;
 const SHUTDOWN_SIGNALS = ['SIGTERM', 'SIGINT'] as const;
@@ -38,7 +41,11 @@ const notFoundHandler = (_request: Request, response: Response): void => {
   });
 };
 
-const createApp = (container: AppContainer, rateLimiter: RateLimiter): Express => {
+const createApp = (
+  container: AppContainer,
+  chatRateLimiter: RateLimiter,
+  speechRateLimiter: RateLimiter
+): Express => {
   const app = express();
 
   app.disable('x-powered-by');
@@ -50,7 +57,16 @@ const createApp = (container: AppContainer, rateLimiter: RateLimiter): Express =
 
   app.use(HEALTH_ROUTE_PREFIX, createHealthRouter());
   app.use(IDENTIFY_ROUTE_PREFIX, createIdentifyRouter(container.identifyUserController));
-  app.use(CHAT_ROUTE_PREFIX, rateLimiter.middleware, createChatRouter(container.chatController));
+  app.use(
+    CHAT_ROUTE_PREFIX,
+    chatRateLimiter.middleware,
+    createChatRouter(container.chatController)
+  );
+  app.use(
+    SPEECH_ROUTE_PREFIX,
+    speechRateLimiter.middleware,
+    createSpeechRouter(container.speechController)
+  );
 
   app.use(notFoundHandler);
   app.use(errorHandler);
@@ -61,7 +77,7 @@ const createApp = (container: AppContainer, rateLimiter: RateLimiter): Express =
 const registerShutdownHandlers = (
   server: Server,
   container: AppContainer,
-  rateLimiter: RateLimiter
+  rateLimiters: readonly RateLimiter[]
 ): void => {
   let shutdownInProgress = false;
 
@@ -81,7 +97,7 @@ const registerShutdownHandlers = (
     server.close(() => {
       clearTimeout(forcedExitTimer);
       container.shutdown();
-      rateLimiter.stop();
+      rateLimiters.forEach((rateLimiter) => rateLimiter.stop());
       console.info(SHUTDOWN_COMPLETED_MESSAGE);
       process.exit(SUCCESS_EXIT_CODE);
     });
@@ -95,8 +111,9 @@ const registerShutdownHandlers = (
 const startServer = (): void => {
   try {
     const container = createContainer();
-    const rateLimiter = createRateLimiter();
-    const app = createApp(container, rateLimiter);
+    const chatRateLimiter = createRateLimiter();
+    const speechRateLimiter = createRateLimiter(SPEECH_RATE_LIMIT_MAX_REQUESTS);
+    const app = createApp(container, chatRateLimiter, speechRateLimiter);
 
     const server = app.listen(container.env.port, () => {
       console.info(
@@ -109,7 +126,7 @@ const startServer = (): void => {
       process.exit(STARTUP_FAILURE_EXIT_CODE);
     });
 
-    registerShutdownHandlers(server, container, rateLimiter);
+    registerShutdownHandlers(server, container, [chatRateLimiter, speechRateLimiter]);
   } catch (error) {
     console.error(`${STARTUP_FAILURE_MESSAGE} ${describeError(error)}`);
     process.exit(STARTUP_FAILURE_EXIT_CODE);

@@ -13,6 +13,10 @@ export const MIN_USER_MESSAGE_LENGTH: number = 1;
 
 export const MAX_USER_MESSAGE_LENGTH: number = 1000;
 
+export const MIN_SPEECH_TEXT_LENGTH: number = 1;
+
+export const MAX_SPEECH_TEXT_LENGTH: number = 800;
+
 export const MIN_USER_NAME_LENGTH: number = 2;
 
 export const MAX_USER_NAME_LENGTH: number = 40;

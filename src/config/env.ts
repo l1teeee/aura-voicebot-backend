@@ -4,6 +4,8 @@ import { z } from 'zod';
 const DEFAULT_PORT = 3000;
 const MAX_PORT_NUMBER = 65535;
 const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
+const DEFAULT_OPENAI_TTS_MODEL = 'gpt-4o-mini-tts';
+const DEFAULT_OPENAI_TTS_VOICE = 'coral';
 const NODE_ENVIRONMENTS = ['development', 'production', 'test'] as const;
 const DEFAULT_NODE_ENVIRONMENT = 'development';
 const UNKNOWN_VARIABLE_LABEL = 'entorno';
@@ -18,6 +20,8 @@ export interface Env {
   readonly nodeEnv: NodeEnvironment;
   readonly openAiApiKey: string;
   readonly openAiModel: string;
+  readonly openAiTtsModel: string;
+  readonly openAiTtsVoice: string;
   readonly openWeatherApiKey: string;
   readonly openWeatherBaseUrl: string;
   readonly logWebhookUrl: string;
@@ -49,6 +53,12 @@ const envSchema = z.object({
   OPENAI_MODEL: requiredText('debe ser un identificador de modelo no vacío').default(
     DEFAULT_OPENAI_MODEL
   ),
+  OPENAI_TTS_MODEL: requiredText('debe ser un identificador de modelo de voz no vacío').default(
+    DEFAULT_OPENAI_TTS_MODEL
+  ),
+  OPENAI_TTS_VOICE: requiredText('debe ser un identificador de voz no vacío').default(
+    DEFAULT_OPENAI_TTS_VOICE
+  ),
   OPENWEATHER_API_KEY: requiredText('falta la clave de la API de OpenWeatherMap'),
   OPENWEATHER_BASE_URL: requiredUrl('debe ser una URL válida de la API de OpenWeatherMap'),
   LOG_WEBHOOK_URL: requiredUrl('debe ser una URL válida del webhook de registro'),
@@ -77,6 +87,8 @@ export const loadEnv = (): Env => {
     nodeEnv: result.data.NODE_ENV,
     openAiApiKey: result.data.OPENAI_API_KEY,
     openAiModel: result.data.OPENAI_MODEL,
+    openAiTtsModel: result.data.OPENAI_TTS_MODEL,
+    openAiTtsVoice: result.data.OPENAI_TTS_VOICE,
     openWeatherApiKey: result.data.OPENWEATHER_API_KEY,
     openWeatherBaseUrl: result.data.OPENWEATHER_BASE_URL,
     logWebhookUrl: result.data.LOG_WEBHOOK_URL,
