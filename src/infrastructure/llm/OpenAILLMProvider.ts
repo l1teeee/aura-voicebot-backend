@@ -67,7 +67,8 @@ export class OpenAILLMProvider implements LLMProvider {
         messages: toChatCompletionMessages(
           request.systemPrompt,
           request.conversation,
-          request.toolRounds
+          request.toolRounds,
+          request.image
         ),
         tools: toChatCompletionTools(request.tools),
         tool_choice: AUTOMATIC_TOOL_CHOICE

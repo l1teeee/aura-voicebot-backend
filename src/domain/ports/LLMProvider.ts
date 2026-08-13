@@ -42,6 +42,10 @@ export interface LLMGenerationRequest {
   readonly conversation: Conversation;
   readonly tools: readonly LLMToolDefinition[];
   readonly toolRounds: readonly LLMToolRound[];
+  readonly image?: {
+    readonly mimeType: string;
+    readonly base64: string;
+  };
 }
 
 export interface LLMCompletion {

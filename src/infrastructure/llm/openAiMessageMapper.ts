@@ -2,7 +2,8 @@ import type {
   ChatCompletionAssistantMessageParam,
   ChatCompletionMessageParam,
   ChatCompletionMessageToolCall,
-  ChatCompletionTool
+  ChatCompletionTool,
+  ChatCompletionUserMessageParam
 } from 'openai/resources/chat/completions';
 
 import type { Conversation } from '../../domain/entities/Conversation';
@@ -69,15 +70,54 @@ const toFunctionParameters = (parameters: JsonSchemaObject): Record<string, unkn
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+const IMAGE_DETAIL = 'low';
+
+const toUserMessageWithImage = (
+  message: ChatCompletionUserMessageParam,
+  image: { readonly mimeType: string; readonly base64: string }
+): ChatCompletionUserMessageParam => ({
+  role: 'user',
+  content: [
+    { type: 'text', text: typeof message.content === 'string' ? message.content : '' },
+    {
+      type: 'image_url',
+      image_url: {
+        url: `data:${image.mimeType};base64,${image.base64}`,
+        detail: IMAGE_DETAIL
+      }
+    }
+  ]
+});
+
+const attachImageToLastUserMessage = (
+  messages: ChatCompletionMessageParam[],
+  image: { readonly mimeType: string; readonly base64: string } | undefined
+): void => {
+  if (image === undefined || messages.length === 0) {
+    return;
+  }
+
+  const lastIndex = messages.length - 1;
+  const lastMessage = messages[lastIndex];
+
+  if (lastMessage === undefined || lastMessage.role !== 'user') {
+    return;
+  }
+
+  messages[lastIndex] = toUserMessageWithImage(lastMessage, image);
+};
+
 export const toChatCompletionMessages = (
   systemPrompt: string,
   conversation: Conversation,
-  toolRounds: readonly LLMToolRound[]
+  toolRounds: readonly LLMToolRound[],
+  image?: { readonly mimeType: string; readonly base64: string }
 ): ChatCompletionMessageParam[] => {
   const messages: ChatCompletionMessageParam[] = [{ role: 'system', content: systemPrompt }];
   for (const message of conversation.history) {
     messages.push(toHistoryMessage(message));
   }
+  attachImageToLastUserMessage(messages, image);
   for (const round of toolRounds) {
     messages.push(toAssistantToolCallsMessage(round.calls));
     for (const result of round.results) {

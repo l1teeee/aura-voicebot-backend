@@ -12,8 +12,8 @@ export class ChatController {
     next: NextFunction
   ): Promise<void> => {
     try {
-      const { message, sessionId, userId } = req.body as ChatRequest;
-      const output = await this.processUserMessage.execute({ sessionId, message, userId });
+      const { message, sessionId, userId, image } = req.body as ChatRequest;
+      const output = await this.processUserMessage.execute({ sessionId, message, userId, image });
 
       res.status(HTTP_STATUS.ok).json({
         reply: output.reply,

@@ -56,6 +56,10 @@ interface InteractionContext {
   readonly sessionId: SessionId;
   readonly userMessage: UserMessage;
   readonly userId?: string;
+  readonly image?: {
+    readonly mimeType: string;
+    readonly data: string;
+  };
 }
 
 interface ToolCallOutcome {
@@ -197,7 +201,12 @@ export class ProcessUserMessageUseCase {
 
     conversation.addUserMessage(userMessage);
 
-    const context: InteractionContext = { sessionId, userMessage, userId: input.userId };
+    const context: InteractionContext = {
+      sessionId,
+      userMessage,
+      userId: input.userId,
+      image: input.image
+    };
     const outcome = await this.runToolLoop(conversation, context);
     const reply = resolveReply(outcome);
 
@@ -256,7 +265,11 @@ export class ProcessUserMessageUseCase {
         systemPrompt: AURA_SYSTEM_PROMPT,
         conversation,
         tools: AVAILABLE_TOOLS,
-        toolRounds
+        toolRounds,
+        image:
+          context.image === undefined
+            ? undefined
+            : { mimeType: context.image.mimeType, base64: context.image.data }
       });
       const completionText = extractText(completion);
 
