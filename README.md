@@ -21,6 +21,7 @@ Herramientas que el modelo puede invocar:
 | Herramienta            | Qué hace                                                                 |
 |------------------------|--------------------------------------------------------------------------|
 | `consultarClima`       | Consulta el clima actual de una ciudad en OpenWeatherMap y lo normaliza a un tipo del dominio (`WeatherSnapshot`). El LLM nunca ve el payload crudo del tercero. |
+| `consultarPronostico`  | Consulta el pronóstico a cinco días de una ciudad en OpenWeatherMap (mínima, máxima, cielo y probabilidad de lluvia por día) y lo normaliza al dominio. Se usa para preguntas sobre el tiempo futuro, no el de ahora mismo. |
 | `registrarInteraccion` | Envía la interacción al webhook de registro. Es *fire-and-forget*: si falla, se anota en consola y la conversación continúa. |
 
 Lo que este backend **no** hace: autenticación real, frontend, transcripción de audio, síntesis de voz, WebSockets ni streaming.
@@ -190,7 +191,7 @@ Justificación: el registro es observabilidad, no parte del contrato con el usua
 
 Requisitos: **Node.js 20 o superior** (el código usa `fetch`, `AbortController` y `crypto` globales).
 
-> El repositorio se publica sin `node_modules/` ni `package-lock.json`: el lock se genera en tu primer `npm install`. Hasta entonces el editor marcará como no resueltos los imports de `express`, `openai`, `zod` y `dotenv`, y `npm run typecheck` fallará. Es lo esperado.
+> El repositorio se publica sin `node_modules/`: se genera en tu primer `npm install`. `package-lock.json` sí está versionado, así que ese `npm install` reproduce exactamente las mismas versiones que se usaron para desplegar.
 
 ```bash
 # 1. Clonar el repositorio
@@ -403,7 +404,7 @@ Antes de desplegar, ten a mano las cuatro claves obligatorias y el origen del fr
    | Start Command     | `npm start`                  |
    | Health Check Path | `/api/health`                |
 
-3. En **Environment → Environment Variables**, añade `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_TTS_MODEL`, `OPENAI_TTS_VOICE`, `OPENWEATHER_API_KEY`, `OPENWEATHER_BASE_URL`, `LOG_WEBHOOK_URL`, `ALLOWED_ORIGIN` y `NODE_ENV=production`.
+3. En **Environment → Environment Variables**, añade `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_TTS_MODEL`, `OPENAI_TTS_VOICE`, `OPENWEATHER_API_KEY`, `OPENWEATHER_BASE_URL`, `LOG_WEBHOOK_URL`, `ALLOWED_ORIGIN`, `DATABASE_URL` (necesaria para que `/api/identify` y el historial persistente funcionen) y `NODE_ENV=production`.
    **No definas `PORT`:** Render la inyecta y sobrescribirla rompe el despliegue.
 4. Despliega y comprueba `https://<tu-servicio>.onrender.com/api/health`.
 
