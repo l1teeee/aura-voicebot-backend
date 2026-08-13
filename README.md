@@ -1,5 +1,7 @@
 # Aura — Backend
 
+**API en producción:** https://backend-production-1658.up.railway.app — sirve al frontend desplegado en https://aura-voicebot-frontend.vercel.app/
+
 API REST del voicebot **Aura**: un asistente personal conversacional por voz, de propósito abierto y con especialidad en clima.
 
 ---
