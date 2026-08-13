@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS favorite_cities (
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   city TEXT NOT NULL,
   city_key TEXT NOT NULL,
+  temperature DOUBLE PRECISION NOT NULL,
+  units TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (user_id, city_key)
 );

@@ -22,8 +22,8 @@ Herramientas que el modelo puede invocar:
 |------------------------|--------------------------------------------------------------------------|
 | `consultarClima`       | Consulta el clima actual de una ciudad en OpenWeatherMap y lo normaliza a un tipo del dominio (`WeatherSnapshot`). El LLM nunca ve el payload crudo del tercero. |
 | `consultarPronostico`  | Consulta el pronóstico a cinco días de una ciudad en OpenWeatherMap (mínima, máxima, cielo y probabilidad de lluvia por día) y lo normaliza al dominio. Se usa para preguntas sobre el tiempo futuro, no el de ahora mismo. |
-| `guardarCiudadFavorita` | Guarda una ciudad en las favoritas del usuario identificado, incluso cuando se refiere a una ciudad mencionada recientemente en la conversación. |
-| `listarCiudadesFavoritas` | Recupera las ciudades favoritas del usuario identificado para responderlas por voz. |
+| `guardarCiudadFavorita` | Guarda una ciudad en las favoritas del usuario identificado, incluso cuando se refiere a una ciudad mencionada recientemente en la conversación. Consulta su clima actual antes de guardar y registra la temperatura junto con el favorito. |
+| `listarCiudadesFavoritas` | Recupera las ciudades favoritas del usuario identificado, cada una con su temperatura guardada, para responderlas por voz. |
 | `registrarInteraccion` | Envía la interacción al webhook de registro. Es *fire-and-forget*: si falla, se anota en consola y la conversación continúa. |
 
 Lo que este backend **no** hace: autenticación real, frontend, transcripción de audio ni WebSockets.
@@ -244,8 +244,8 @@ Base URL en local: `http://localhost:3000`. Todas las rutas cuelgan del prefijo 
 | `POST` | `/api/chat`                    | `{ "message": string, "sessionId": string }` | `200` `{ "reply": string, "sessionId": string, "action"?: { "type": string, "data": object } }` |
 | `POST` | `/api/identify`                | `{ "name": string }`                        | `200` `{ "userId": string, "isReturning": boolean, "conversations": [...] }` |
 | `POST` | `/api/speech`                  | `{ "text": string }`                        | `200` Audio MP3 (`Content-Type: audio/mpeg`) transmitido por streaming. |
-| `POST` | `/api/favorite-cities`         | `{ "userId": "uuid", "city": "string" }` | `201` `{ "id": "uuid", "city": "string", "createdAt": "ISO timestamp" }` |
-| `GET`  | `/api/favorite-cities/:userId` | —                                             | `200` `{ "cities": [{ "id": "uuid", "city": "string", "createdAt": "ISO timestamp" }] }` |
+| `POST` | `/api/favorite-cities`         | `{ "userId": "uuid", "city": "string" }` | `201` `{ "id": "uuid", "city": "string", "temperature": number, "units": "string", "createdAt": "ISO timestamp" }` |
+| `GET`  | `/api/favorite-cities/:userId` | —                                             | `200` `{ "cities": [{ "id": "uuid", "city": "string", "temperature": number, "units": "string", "createdAt": "ISO timestamp" }] }` |
 | `DELETE` | `/api/favorite-cities/:id`   | —                                             | `204` sin cuerpo. |
 
 Restricciones del body de `/api/chat`:
@@ -260,7 +260,7 @@ Restricciones del body de `/api/chat`:
 
 El body de `/api/speech` solo admite `text`, que se recorta y debe contener entre 1 y 800 caracteres. La respuesta no se almacena en caché.
 
-`POST /api/favorite-cities` exige el `userId` devuelto por `/api/identify` y una ciudad de 2 a 80 caracteres. La ciudad se muestra en Title Case y se compara mediante una clave normalizada con `trim` y minúsculas. El listado se ordena desde la favorita más reciente y devuelve `cities: []` cuando no hay resultados.
+`POST /api/favorite-cities` exige el `userId` devuelto por `/api/identify` y una ciudad de 2 a 80 caracteres. La ciudad se muestra en Title Case y se compara mediante una clave normalizada con `trim` y minúsculas. Antes de guardar, se consulta el clima actual de la ciudad en OpenWeatherMap y se persiste junto con el favorito, así que tanto la respuesta HTTP como la herramienta de voz siempre incluyen `temperature`/`units`. El listado se ordena desde la favorita más reciente y devuelve `cities: []` cuando no hay resultados.
 
 ### Ejemplo
 

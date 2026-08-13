@@ -5,6 +5,8 @@ import {
 } from '../../domain/constants';
 import { ValidationError } from '../../domain/errors/ValidationError';
 import type { FavoriteCityRepository } from '../../domain/ports/FavoriteCityRepository';
+import type { WeatherProvider } from '../../domain/ports/WeatherProvider';
+import { DEFAULT_TEMPERATURE_UNITS } from '../constants';
 import { AddFavoriteCityInput } from '../dto/AddFavoriteCityInput';
 import { AddFavoriteCityOutput } from '../dto/AddFavoriteCityOutput';
 
@@ -19,7 +21,10 @@ const toTitleCase = (city: string): string =>
   );
 
 export class AddFavoriteCityUseCase {
-  constructor(private readonly favoriteCityRepository: FavoriteCityRepository) {}
+  constructor(
+    private readonly weatherProvider: WeatherProvider,
+    private readonly favoriteCityRepository: FavoriteCityRepository
+  ) {}
 
   async execute(input: AddFavoriteCityInput): Promise<AddFavoriteCityOutput> {
     const userId = input.userId.trim().toLowerCase();
@@ -37,11 +42,20 @@ export class AddFavoriteCityUseCase {
       throw new ValidationError(INVALID_CITY_MESSAGE);
     }
 
-    const favoriteCity = await this.favoriteCityRepository.add(userId, toTitleCase(city));
+    const snapshot = await this.weatherProvider.getCurrentWeather(city, DEFAULT_TEMPERATURE_UNITS);
+
+    const favoriteCity = await this.favoriteCityRepository.add(
+      userId,
+      toTitleCase(city),
+      snapshot.temperature,
+      snapshot.units
+    );
 
     return {
       id: favoriteCity.id,
       city: favoriteCity.city,
+      temperature: favoriteCity.temperature,
+      units: favoriteCity.units,
       createdAt: favoriteCity.createdAt.toISOString()
     };
   }

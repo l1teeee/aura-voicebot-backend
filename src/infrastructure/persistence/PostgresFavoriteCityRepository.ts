@@ -5,14 +5,14 @@ import type { FavoriteCityRepository } from '../../domain/ports/FavoriteCityRepo
 import { normalizeKey } from '../../domain/utils/normalizeKey';
 
 const ADD_FAVORITE_CITY_QUERY = `
-  INSERT INTO favorite_cities (user_id, city, city_key)
-  VALUES ($1, $2, $3)
+  INSERT INTO favorite_cities (user_id, city, city_key, temperature, units)
+  VALUES ($1, $2, $3, $4, $5)
   ON CONFLICT (user_id, city_key) DO NOTHING
-  RETURNING id, user_id, city, created_at
+  RETURNING id, user_id, city, temperature, units, created_at
 `;
 
 const LIST_FAVORITE_CITIES_QUERY = `
-  SELECT id, user_id, city, created_at
+  SELECT id, user_id, city, temperature, units, created_at
   FROM favorite_cities
   WHERE user_id = $1
   ORDER BY created_at DESC
@@ -27,6 +27,8 @@ interface FavoriteCityRow extends QueryResultRow {
   readonly id: string;
   readonly user_id: string;
   readonly city: string;
+  readonly temperature: number;
+  readonly units: string;
   readonly created_at: Date | string;
 }
 
@@ -34,16 +36,30 @@ const toDate = (value: Date | string): Date =>
   value instanceof Date ? new Date(value.getTime()) : new Date(value);
 
 const mapFavoriteCity = (row: FavoriteCityRow): FavoriteCity =>
-  FavoriteCity.fromPersistence(row.id, row.user_id, row.city, toDate(row.created_at));
+  FavoriteCity.fromPersistence(
+    row.id,
+    row.user_id,
+    row.city,
+    row.temperature,
+    row.units,
+    toDate(row.created_at)
+  );
 
 export class PostgresFavoriteCityRepository implements FavoriteCityRepository {
   constructor(private readonly pool: Pool) {}
 
-  async add(userId: string, city: string): Promise<FavoriteCity> {
+  async add(
+    userId: string,
+    city: string,
+    temperature: number,
+    units: string
+  ): Promise<FavoriteCity> {
     const result = await this.pool.query<FavoriteCityRow>(ADD_FAVORITE_CITY_QUERY, [
       userId,
       city,
-      normalizeKey(city)
+      normalizeKey(city),
+      temperature,
+      units
     ]);
     const row = result.rows[0];
 

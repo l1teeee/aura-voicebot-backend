@@ -22,6 +22,8 @@ export class ListFavoriteCitiesUseCase {
       cities: favoriteCities.map((favoriteCity) => ({
         id: favoriteCity.id,
         city: favoriteCity.city,
+        temperature: favoriteCity.temperature,
+        units: favoriteCity.units,
         createdAt: favoriteCity.createdAt.toISOString()
       }))
     };

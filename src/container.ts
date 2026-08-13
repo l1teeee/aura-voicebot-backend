@@ -80,7 +80,7 @@ export const createContainer = (): AppContainer => {
   const favoriteCityRepository: FavoriteCityRepository =
     new PostgresFavoriteCityRepository(postgresPool);
 
-  const addFavoriteCityUseCase = new AddFavoriteCityUseCase(favoriteCityRepository);
+  const addFavoriteCityUseCase = new AddFavoriteCityUseCase(weatherProvider, favoriteCityRepository);
   const listFavoriteCitiesUseCase = new ListFavoriteCitiesUseCase(favoriteCityRepository);
   const removeFavoriteCityUseCase = new RemoveFavoriteCityUseCase(favoriteCityRepository);
 
