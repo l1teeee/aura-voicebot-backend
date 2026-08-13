@@ -27,13 +27,19 @@ export const chatRequestSchema = z
           required_error: 'El campo sessionId es obligatorio.',
           invalid_type_error: 'El campo sessionId debe ser texto.'
         })
-        .regex(UUID_V4_PATTERN, 'El campo sessionId debe ser un identificador UUID v4 válido.')
+        .regex(UUID_V4_PATTERN, 'El campo sessionId debe ser un identificador UUID v4 válido.'),
+      userId: z
+        .string({
+          invalid_type_error: 'El campo userId debe ser texto.'
+        })
+        .regex(UUID_V4_PATTERN, 'El campo userId debe ser un identificador UUID v4 válido.')
+        .optional()
     },
     {
       required_error: 'El cuerpo de la petición es obligatorio.',
       invalid_type_error: 'El cuerpo de la petición debe ser un objeto JSON válido.'
     }
   )
-  .strict('El cuerpo de la petición solo admite los campos message y sessionId.');
+  .strict('El cuerpo de la petición solo admite los campos message, sessionId y userId.');
 
 export type ChatRequest = z.infer<typeof chatRequestSchema>;

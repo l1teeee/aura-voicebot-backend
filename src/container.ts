@@ -1,17 +1,22 @@
 import OpenAI from 'openai';
+import { Pool } from 'pg';
+import { IdentifyUserUseCase } from './application/use-cases/IdentifyUserUseCase';
 import { ProcessUserMessageUseCase } from './application/use-cases/ProcessUserMessageUseCase';
 import { Env, loadEnv } from './config/env';
 import { ConversationRepository } from './domain/ports/ConversationRepository';
 import { InteractionLogger } from './domain/ports/InteractionLogger';
 import { LLMProvider } from './domain/ports/LLMProvider';
+import { UserRepository } from './domain/ports/UserRepository';
 import { WeatherProvider } from './domain/ports/WeatherProvider';
 import { OPENAI_REQUEST_TIMEOUT_MS } from './infrastructure/constants';
 import { HttpClient } from './infrastructure/http/HttpClient';
 import { OpenAILLMProvider } from './infrastructure/llm/OpenAILLMProvider';
 import { WebhookInteractionLogger } from './infrastructure/logging/WebhookInteractionLogger';
 import { InMemoryConversationRepository } from './infrastructure/persistence/InMemoryConversationRepository';
+import { PostgresUserRepository } from './infrastructure/persistence/PostgresUserRepository';
 import { OpenWeatherMapProvider } from './infrastructure/weather/OpenWeatherMapProvider';
 import { ChatController } from './interfaces/http/controllers/ChatController';
+import { IdentifyUserController } from './interfaces/http/controllers/IdentifyUserController';
 
 const WEATHER_SERVICE_NAME = 'openweathermap';
 const LOG_WEBHOOK_SERVICE_NAME = 'log-webhook';
@@ -19,6 +24,7 @@ const LOG_WEBHOOK_SERVICE_NAME = 'log-webhook';
 export interface AppContainer {
   readonly env: Env;
   readonly chatController: ChatController;
+  readonly identifyUserController: IdentifyUserController;
   readonly shutdown: () => void;
 }
 
@@ -49,19 +55,27 @@ export const createContainer = (): AppContainer => {
   const inMemoryConversationRepository = new InMemoryConversationRepository();
   inMemoryConversationRepository.startPeriodicCleanup();
   const conversationRepository: ConversationRepository = inMemoryConversationRepository;
+  const postgresPool = new Pool(
+    env.databaseUrl === undefined ? {} : { connectionString: env.databaseUrl }
+  );
+  const userRepository: UserRepository = new PostgresUserRepository(postgresPool);
 
   const processUserMessageUseCase = new ProcessUserMessageUseCase(
     llmProvider,
     weatherProvider,
     interactionLogger,
-    conversationRepository
+    conversationRepository,
+    userRepository
   );
+  const identifyUserUseCase = new IdentifyUserUseCase(userRepository);
 
   const chatController = new ChatController(processUserMessageUseCase);
+  const identifyUserController = new IdentifyUserController(identifyUserUseCase);
 
   const shutdown = (): void => {
     inMemoryConversationRepository.stopPeriodicCleanup();
+    void postgresPool.end();
   };
 
-  return { env, chatController, shutdown };
+  return { env, chatController, identifyUserController, shutdown };
 };

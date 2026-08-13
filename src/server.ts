@@ -12,9 +12,11 @@ import { RateLimiter, createRateLimiter } from './interfaces/http/middlewares/ra
 import { requestLogger } from './interfaces/http/middlewares/requestLogger';
 import { createChatRouter } from './interfaces/http/routes/chat.routes';
 import { createHealthRouter } from './interfaces/http/routes/health.routes';
+import { createIdentifyRouter } from './interfaces/http/routes/identify.routes';
 
 const HEALTH_ROUTE_PREFIX = '/api/health';
 const CHAT_ROUTE_PREFIX = '/api/chat';
+const IDENTIFY_ROUTE_PREFIX = '/api/identify';
 const JSON_BODY_LIMIT = '16kb';
 const TRUSTED_PROXY_HOP_COUNT = 1;
 const SHUTDOWN_SIGNALS = ['SIGTERM', 'SIGINT'] as const;
@@ -47,6 +49,7 @@ const createApp = (container: AppContainer, rateLimiter: RateLimiter): Express =
   app.use(express.json({ limit: JSON_BODY_LIMIT }));
 
   app.use(HEALTH_ROUTE_PREFIX, createHealthRouter());
+  app.use(IDENTIFY_ROUTE_PREFIX, createIdentifyRouter(container.identifyUserController));
   app.use(CHAT_ROUTE_PREFIX, rateLimiter.middleware, createChatRouter(container.chatController));
 
   app.use(notFoundHandler);

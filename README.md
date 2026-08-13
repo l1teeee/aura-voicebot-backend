@@ -21,9 +21,9 @@ Herramientas que el modelo puede invocar:
 | `consultarClima`       | Consulta el clima actual de una ciudad en OpenWeatherMap y lo normaliza a un tipo del dominio (`WeatherSnapshot`). El LLM nunca ve el payload crudo del tercero. |
 | `registrarInteraccion` | Envía la interacción al webhook de registro. Es *fire-and-forget*: si falla, se anota en consola y la conversación continúa. |
 
-Lo que este backend **no** hace: autenticación, base de datos, frontend, transcripción de audio, síntesis de voz, WebSockets ni streaming.
+Lo que este backend **no** hace: autenticación real, frontend, transcripción de audio, síntesis de voz, WebSockets ni streaming.
 
-**Stack:** Node.js 20+, TypeScript `strict`, Express 4, SDK oficial `openai` v4, `zod`, `dotenv`. Sin ORM, sin base de datos, sin Docker.
+**Stack:** Node.js 20+, TypeScript `strict`, Express 4, SDK oficial `openai` v4, `zod`, `dotenv` y `pg`. Sin ORM ni Docker. PostgreSQL se usa para identificación e historial persistente; el chat anónimo conserva su repositorio en memoria.
 
 ---
 
@@ -36,10 +36,10 @@ Clean Architecture **pragmática**: se definen puertos solo donde existe una imp
 ```
 src/
   domain/                        Núcleo. No importa nada: ni Express, ni OpenAI, ni zod.
-    entities/                    Conversation, ConversationTurn, Message
+    entities/                    Conversation, ConversationTurn, Message, User
     value-objects/               SessionId, UserMessage
     ports/                       LLMProvider, WeatherProvider,
-                                 InteractionLogger, ConversationRepository
+                                 InteractionLogger, ConversationRepository, UserRepository
     errors/                      DomainError + subtipos tipados
     constants.ts
 
@@ -55,17 +55,17 @@ src/
     llm/                         OpenAILLMProvider
     weather/                     OpenWeatherMapProvider
     logging/                     WebhookInteractionLogger
-    persistence/                 InMemoryConversationRepository
+    persistence/                 InMemoryConversationRepository, PostgresUserRepository
     http/                        HttpClient (timeout + reintentos)
     constants.ts
 
   interfaces/                    Adaptador HTTP. Importa application y domain,
     http/                        nunca infrastructure.
-      routes/                    chat.routes.ts, health.routes.ts
-      controllers/               ChatController
+      routes/                    chat.routes.ts, health.routes.ts, identify.routes.ts
+      controllers/               ChatController, IdentifyUserController
       middlewares/               errorHandler, rateLimiter, cors,
                                  requestLogger, validateBody
-      schemas/                   chatRequestSchema (zod)
+      schemas/                   chatRequestSchema, identifyUserRequestSchema (zod)
       constants.ts
 
   config/env.ts                  Variables de entorno validadas con zod al arranque.
@@ -124,7 +124,7 @@ Los errores de herramienta (`CITY_NOT_FOUND`, `EXTERNAL_SERVICE_ERROR`) **no rom
 
 ### 3.1 Puertos solo para LLM, clima, logger y repositorio
 
-Un puerto es un contrato que aísla una decisión que puede cambiar. Estas cuatro tienen una razón concreta y presente para existir:
+Un puerto es un contrato que aísla una decisión que puede cambiar. Estas cinco tienen una razón concreta y presente para existir:
 
 | Puerto                   | Razón de existir                                                                  |
 |--------------------------|-----------------------------------------------------------------------------------|
@@ -132,6 +132,7 @@ Un puerto es un contrato que aísla una decisión que puede cambiar. Estas cuatr
 | `WeatherProvider`        | OpenWeatherMap tiene alternativas directas (AEMET, WeatherAPI) con el mismo contrato. |
 | `InteractionLogger`      | Hoy es un webhook de Pipedream; mañana puede ser BigQuery, S3 o una cola.          |
 | `ConversationRepository` | Hoy es memoria; en cuanto haya más de una instancia debe ser Redis.                |
+| `UserRepository`         | Aísla PostgreSQL y concentra la identificación, el historial y la asociación opcional del chat. |
 
 No se han creado puertos ni DTOs para lo que no cambia. No hay mappers entre estructuras idénticas, ni una interfaz por clase "por simetría". Una abstracción sin al menos una razón concreta de existir es coste de mantenimiento sin retorno.
 
@@ -230,6 +231,7 @@ Base URL en local: `http://localhost:3000`. Todas las rutas cuelgan del prefijo 
 |--------|----------------|-----------------------------------------------|----------------------------------------------------------------------|
 | `GET`  | `/api/health`  | —                                             | `{ "status": "ok", "uptime": 1234 }` (`uptime` en segundos enteros)  |
 | `POST` | `/api/chat`    | `{ "message": string, "sessionId": string }`  | `{ "reply": string, "sessionId": string, "action"?: { "type": string, "data": object } }` |
+| `POST` | `/api/identify` | `{ "name": string }`                         | `{ "userId": string, "isReturning": boolean, "conversations": [...] }` |
 
 Restricciones del body de `/api/chat`:
 
@@ -237,6 +239,7 @@ Restricciones del body de `/api/chat`:
 |-------------|--------|-----------------------------------------------|
 | `message`   | string | Obligatorio. Entre 1 y 1000 caracteres.       |
 | `sessionId` | string | Obligatorio. UUID v4. Lo genera el frontend y lo mantiene durante toda la conversación. |
+| `userId`    | string | Opcional. UUID v4 devuelto por `/api/identify`. Si no viene, el comportamiento actual no cambia. |
 
 `action` se **omite del JSON** si el modelo no invocó ninguna herramienta. Cuando aparece, sirve para que el frontend muestre contexto visual (por ejemplo, una tarjeta de clima).
 
@@ -280,7 +283,7 @@ Todos los errores comparten exactamente la misma forma:
 
 | Código                   | HTTP | Cuándo ocurre                                                        |
 |--------------------------|------|-----------------------------------------------------------------------|
-| `VALIDATION_ERROR`       | 400  | Body ausente o mal formado, `sessionId` que no es UUID v4, `message` fuera de 1–1000 caracteres. |
+| `VALIDATION_ERROR`       | 400  | Body ausente o mal formado, `sessionId` o `userId` que no es UUID v4, `message` fuera de 1–1000 caracteres o `name` fuera de 2–40 caracteres. |
 | `CITY_NOT_FOUND`         | 400  | La ciudad solicitada no existe en el proveedor de clima.              |
 | `NOT_FOUND`              | 404  | La ruta solicitada no existe.                                         |
 | `RATE_LIMIT_EXCEEDED`    | 429  | Se superó el límite de peticiones por IP.                             |
@@ -303,6 +306,45 @@ Nunca se expone un stack trace, una clave de API ni el texto crudo de un servici
 
 ---
 
+### Identificación de usuario
+
+`POST /api/identify` recibe `{ "name": "string" }`. El nombre se recorta y se normaliza a minúsculas para buscarlo en `users.name_key`. La respuesta devuelve el UUID, indica si es un usuario existente y, si corresponde, devuelve sus sesiones e interacciones en orden cronológico.
+
+El historial persistente requiere ejecutar [`database/schema.sql`](database/schema.sql) en PostgreSQL y configurar `DATABASE_URL`. Cada petición de `/api/chat` que incluya el `userId` devuelto por este endpoint crea o reutiliza la sesión en PostgreSQL y guarda la interacción. Las peticiones sin `userId` siguen usando exactamente el flujo anónimo en memoria.
+
+Respuesta `200`:
+
+```json
+{
+  "userId": "uuid",
+  "isReturning": true,
+  "conversations": [
+    {
+      "sessionId": "uuid",
+      "startedAt": "2026-08-12T10:00:00.000Z",
+      "messages": [
+        {
+          "role": "user",
+          "text": "Hola",
+          "createdAt": "2026-08-12T10:00:01.000Z"
+        },
+        {
+          "role": "bot",
+          "text": "Hola, ¿en qué puedo ayudarte?",
+          "createdAt": "2026-08-12T10:00:01.000Z"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Los nombres con menos de 2 o más de 40 caracteres devuelven `400` con el formato común `{ "error": { "code": "VALIDATION_ERROR", "message": "..." } }`.
+
+Esta identificación no es autenticación real. Es una decisión deliberada para la prueba de concepto: no hay contraseña, verificación de identidad, sesión segura ni protección contra suplantación. Cualquier persona que escriba el mismo nombre recuperará el historial asociado, por lo que esta solución no debe usarse para datos sensibles ni producción sin añadir autenticación real.
+
+---
+
 ## 6. Variables de entorno
 
 Se validan con zod al arrancar. Si falta alguna obligatoria o es inválida, el proceso **no arranca** y se imprime qué variable falla y por qué (nunca su valor).
@@ -317,6 +359,8 @@ Se validan con zod al arrancar. Si falta alguna obligatoria o es inválida, el p
 | `OPENWEATHER_BASE_URL` | **Sí**      | —             | URL base de la API, sin barra final: `https://api.openweathermap.org/data/2.5`.                                    |
 | `LOG_WEBHOOK_URL`      | **Sí**      | —             | Endpoint que recibe el registro de cada interacción. Crea uno gratis en <https://pipedream.com/requestbin> o RequestBin. |
 | `ALLOWED_ORIGIN`       | **Sí**      | —             | Único origen autorizado por CORS, sin barra final. En local, el del dev server de Vue (`http://localhost:5173`); en producción, el dominio real del frontend. |
+
+`DATABASE_URL` es opcional para conservar el chat anónimo. Es necesaria para usar `/api/identify` y guardar el historial asociado a `userId`.
 
 ---
 
@@ -342,7 +386,7 @@ Antes de desplegar, ten a mano las cuatro claves obligatorias y el origen del fr
    **No definas `PORT`:** Render la inyecta y sobrescribirla rompe el despliegue.
 4. Despliega y comprueba `https://<tu-servicio>.onrender.com/api/health`.
 
-> En el plan gratuito el servicio se duerme tras un rato de inactividad: la primera petición tras el arranque en frío tarda varios segundos y el historial en memoria se pierde. Es esperado con `InMemoryConversationRepository`.
+> En el plan gratuito el servicio se duerme tras un rato de inactividad: la primera petición tras el arranque en frío tarda varios segundos y el historial anónimo en memoria se pierde. Es esperado con `InMemoryConversationRepository`; el historial asociado a `userId` se conserva en PostgreSQL.
 
 ### 7.2 Railway
 
@@ -360,7 +404,7 @@ Antes de desplegar, ten a mano las cuatro claves obligatorias y el origen del fr
 ### 7.3 Después de desplegar
 
 - Ajusta `ALLOWED_ORIGIN` al dominio real del frontend, o el navegador bloqueará las peticiones por CORS.
-- Recuerda que el historial vive en memoria: **una sola instancia**. No actives autoescalado ni réplicas sin migrar antes el repositorio a Redis (sección 3.4).
+- El historial anónimo vive en memoria: **una sola instancia**. El historial asociado a `userId` vive en PostgreSQL. No actives autoescalado para el chat anónimo sin migrar antes su repositorio a Redis (sección 3.4).
 - Comprueba que el webhook de registro recibe eventos; si no, revisa `LOG_WEBHOOK_URL`. Un fallo ahí no rompe la conversación, solo se anota en los logs.
 
 ---

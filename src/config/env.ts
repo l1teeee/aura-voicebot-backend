@@ -7,6 +7,7 @@ const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
 const NODE_ENVIRONMENTS = ['development', 'production', 'test'] as const;
 const DEFAULT_NODE_ENVIRONMENT = 'development';
 const UNKNOWN_VARIABLE_LABEL = 'entorno';
+const DATABASE_URL_REASON = 'debe ser una URL válida de PostgreSQL';
 const INVALID_ENVIRONMENT_HEADER =
   'Configuración de entorno inválida. Revisa tu archivo .env tomando .env.example como plantilla. Variables con problemas:';
 
@@ -21,6 +22,7 @@ export interface Env {
   readonly openWeatherBaseUrl: string;
   readonly logWebhookUrl: string;
   readonly allowedOrigin: string;
+  readonly databaseUrl: string | undefined;
 }
 
 const requiredText = (reason: string): z.ZodString =>
@@ -51,6 +53,10 @@ const envSchema = z.object({
   OPENWEATHER_BASE_URL: requiredUrl('debe ser una URL válida de la API de OpenWeatherMap'),
   LOG_WEBHOOK_URL: requiredUrl('debe ser una URL válida del webhook de registro'),
   ALLOWED_ORIGIN: requiredText('debe indicar el origen permitido por CORS'),
+  DATABASE_URL: z
+    .string({ invalid_type_error: DATABASE_URL_REASON })
+    .url(DATABASE_URL_REASON)
+    .optional(),
 });
 
 const describeIssue = (issue: z.ZodIssue): string => {
@@ -75,5 +81,6 @@ export const loadEnv = (): Env => {
     openWeatherBaseUrl: result.data.OPENWEATHER_BASE_URL,
     logWebhookUrl: result.data.LOG_WEBHOOK_URL,
     allowedOrigin: result.data.ALLOWED_ORIGIN,
+    databaseUrl: result.data.DATABASE_URL,
   };
 };

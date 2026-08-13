@@ -13,6 +13,7 @@ import {
   LLMToolResult,
   LLMToolRound
 } from '../../domain/ports/LLMProvider';
+import { UserRepository } from '../../domain/ports/UserRepository';
 import { WeatherProvider, WeatherSnapshot } from '../../domain/ports/WeatherProvider';
 import { SessionId } from '../../domain/value-objects/SessionId';
 import { UserMessage } from '../../domain/value-objects/UserMessage';
@@ -151,7 +152,8 @@ export class ProcessUserMessageUseCase {
     private readonly llmProvider: LLMProvider,
     private readonly weatherProvider: WeatherProvider,
     private readonly interactionLogger: InteractionLogger,
-    private readonly conversationRepository: ConversationRepository
+    private readonly conversationRepository: ConversationRepository,
+    private readonly userRepository?: UserRepository
   ) {}
 
   async execute(input: ProcessUserMessageInput): Promise<ProcessUserMessageOutput> {
@@ -167,6 +169,7 @@ export class ProcessUserMessageUseCase {
 
     conversation.completeTurn(reply);
     await this.conversationRepository.save(conversation);
+    await this.persistUserInteraction(input.userId, sessionId.value, userMessage.content, reply);
 
     void this.interactionLogger.log(buildInteractionRecord(context, reply, outcome));
 
@@ -177,6 +180,25 @@ export class ProcessUserMessageUseCase {
     const storedConversation = await this.conversationRepository.findBySessionId(sessionId);
 
     return storedConversation ?? Conversation.start(sessionId);
+  }
+
+  private async persistUserInteraction(
+    userId: string | undefined,
+    sessionId: string,
+    userMessage: string,
+    botReply: string
+  ): Promise<void> {
+    if (userId === undefined || this.userRepository?.saveInteraction === undefined) {
+      return;
+    }
+
+    await this.userRepository.saveInteraction(
+      userId,
+      sessionId,
+      userMessage,
+      botReply,
+      new Date()
+    );
   }
 
   private async runToolLoop(
