@@ -15,6 +15,10 @@ export const weatherToolArgumentsSchema = z.object({
 
 export type WeatherToolArguments = z.infer<typeof weatherToolArgumentsSchema>;
 
+export const forecastToolArgumentsSchema = weatherToolArgumentsSchema;
+
+export type ForecastToolArguments = z.infer<typeof forecastToolArgumentsSchema>;
+
 export const logInteractionToolArgumentsSchema = z.object({
   summary: z.string().trim().min(MIN_TOOL_ARGUMENT_LENGTH).max(MAX_INTERACTION_SUMMARY_LENGTH)
 });

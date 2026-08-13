@@ -1,5 +1,6 @@
 import { Conversation } from '../../domain/entities/Conversation';
 import { DomainError } from '../../domain/errors/DomainError';
+import { ExternalServiceError } from '../../domain/errors/ExternalServiceError';
 import { ConversationRepository } from '../../domain/ports/ConversationRepository';
 import {
   InteractionLogger,
@@ -25,6 +26,7 @@ import {
   INVALID_WEATHER_ARGUMENTS_MESSAGE,
   MAX_TOOL_ITERATIONS,
   PENDING_BOT_REPLY,
+  TOOL_FAILURE_LOG_PREFIX,
   TOOL_LIMIT_FALLBACK_REPLY,
   TOOL_NAMES,
   UNKNOWN_TOOL_MESSAGE,
@@ -34,6 +36,7 @@ import { ProcessUserMessageInput } from '../dto/ProcessUserMessageInput';
 import { ProcessUserMessageAction, ProcessUserMessageOutput } from '../dto/ProcessUserMessageOutput';
 import { AURA_SYSTEM_PROMPT } from '../prompts/auraSystemPrompt';
 import {
+  forecastToolArgumentsSchema,
   logInteractionToolArgumentsSchema,
   weatherToolArgumentsSchema
 } from '../tools/toolArgumentSchemas';
@@ -92,6 +95,12 @@ const buildErrorContent = (message: string): string => JSON.stringify({ error: m
 
 const describeWeatherFailure = (error: unknown): string =>
   error instanceof DomainError ? error.message : WEATHER_LOOKUP_FAILED_MESSAGE;
+
+const logToolFailure = (toolName: string, city: string, error: unknown): void => {
+  const status = error instanceof ExternalServiceError ? ` status: ${String(error.status)}` : '';
+  const detail = error instanceof Error ? error.message : String(error);
+  console.error(`${TOOL_FAILURE_LOG_PREFIX} ${toolName}. ciudad: ${city}.${status} ${detail}`);
+};
 
 const buildAction = (outcome: ToolLoopOutcome): ProcessUserMessageAction | null => {
   if (outcome.weatherSnapshot !== null) {
@@ -283,6 +292,10 @@ export class ProcessUserMessageUseCase {
       return this.executeWeatherLookup(call);
     }
 
+    if (call.toolName === TOOL_NAMES.forecastLookup) {
+      return this.executeForecastLookup(call);
+    }
+
     if (call.toolName === TOOL_NAMES.logInteraction) {
       return this.executeInteractionLog(call, context);
     }
@@ -317,9 +330,44 @@ export class ProcessUserMessageUseCase {
         weatherSnapshot: snapshot
       };
     } catch (error: unknown) {
+      logToolFailure(TOOL_NAMES.weatherLookup, parsedArguments.data.city, error);
+
       return {
         result: buildToolResult(call, buildErrorContent(describeWeatherFailure(error))),
         executedToolName: TOOL_NAMES.weatherLookup,
+        weatherSnapshot: null
+      };
+    }
+  }
+
+  private async executeForecastLookup(call: LLMToolCall): Promise<ToolCallOutcome> {
+    const parsedArguments = forecastToolArgumentsSchema.safeParse(call.arguments);
+
+    if (!parsedArguments.success) {
+      return {
+        result: buildToolResult(call, buildErrorContent(INVALID_WEATHER_ARGUMENTS_MESSAGE)),
+        executedToolName: null,
+        weatherSnapshot: null
+      };
+    }
+
+    try {
+      const forecast = await this.weatherProvider.getForecast(
+        parsedArguments.data.city,
+        parsedArguments.data.units
+      );
+
+      return {
+        result: buildToolResult(call, JSON.stringify(forecast)),
+        executedToolName: TOOL_NAMES.forecastLookup,
+        weatherSnapshot: null
+      };
+    } catch (error: unknown) {
+      logToolFailure(TOOL_NAMES.forecastLookup, parsedArguments.data.city, error);
+
+      return {
+        result: buildToolResult(call, buildErrorContent(describeWeatherFailure(error))),
+        executedToolName: TOOL_NAMES.forecastLookup,
         weatherSnapshot: null
       };
     }

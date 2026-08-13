@@ -19,6 +19,24 @@ const weatherLookupParameters: JsonSchemaObject = {
   required: ['city']
 };
 
+const forecastLookupParameters: JsonSchemaObject = {
+  type: 'object',
+  properties: {
+    city: {
+      type: 'string',
+      description:
+        'Nombre de la ciudad sobre la que se consulta el pronóstico, tal como la nombra la persona. Solo la ciudad, sin la provincia ni el país. Por ejemplo Madrid, Bogotá o Nueva York.'
+    },
+    units: {
+      type: 'string',
+      description:
+        'Sistema de unidades de la temperatura. Usa metric para grados centígrados e imperial para grados Fahrenheit. Si la persona no indica nada, usa metric.',
+      enum: TEMPERATURE_UNIT_VALUES
+    }
+  },
+  required: ['city']
+};
+
 const logInteractionParameters: JsonSchemaObject = {
   type: 'object',
   properties: {
@@ -37,6 +55,12 @@ export const AVAILABLE_TOOLS: readonly LLMToolDefinition[] = [
     description:
       'Consulta el clima actual de una ciudad y devuelve temperatura, sensación térmica, descripción del cielo, humedad, ciudad y país. Úsala siempre que la persona pregunte por el tiempo, la temperatura, la lluvia o si necesita abrigo en un lugar concreto. No inventes nunca estos datos. Si no sabes de qué ciudad habla, pregúntasela antes de llamar a esta herramienta.',
     parameters: weatherLookupParameters
+  },
+  {
+    name: TOOL_NAMES.forecastLookup,
+    description:
+      'Consulta el pronóstico del tiempo de los próximos cinco días de una ciudad. Devuelve una lista de días, cada uno con una etiqueta que dice hoy, mañana o el nombre del día de la semana, la temperatura mínima y máxima, el estado del cielo y la probabilidad de lluvia en porcentaje. Úsala siempre que la persona pregunte por el tiempo de mañana, del fin de semana o de cualquier día futuro, o si va a llover más adelante. Para el tiempo de ahora mismo usa consultarClima. No inventes nunca estos datos.',
+    parameters: forecastLookupParameters
   },
   {
     name: TOOL_NAMES.logInteraction,

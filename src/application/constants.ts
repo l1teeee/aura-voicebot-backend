@@ -4,6 +4,7 @@ export const MAX_TOOL_ITERATIONS: number = 3;
 
 export const TOOL_NAMES = {
   weatherLookup: 'consultarClima',
+  forecastLookup: 'consultarPronostico',
   logInteraction: 'registrarInteraccion'
 } as const;
 
@@ -38,6 +39,8 @@ export const INVALID_LOG_ARGUMENTS_MESSAGE: string =
 
 export const WEATHER_LOOKUP_FAILED_MESSAGE: string =
   'El servicio del clima no está disponible ahora mismo.';
+
+export const TOOL_FAILURE_LOG_PREFIX: string = 'Fallo la herramienta';
 
 export const UNKNOWN_TOOL_MESSAGE: string = 'Esa herramienta no existe.';
 

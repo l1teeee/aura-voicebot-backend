@@ -2,16 +2,20 @@ import { CityNotFoundError } from '../../domain/errors/CityNotFoundError';
 import { ExternalServiceError } from '../../domain/errors/ExternalServiceError';
 import type {
   TemperatureUnits,
+  WeatherForecast,
   WeatherProvider,
   WeatherSnapshot
 } from '../../domain/ports/WeatherProvider';
 import { HTTP_NOT_FOUND_STATUS } from '../constants';
 import type { HttpClient, HttpResponse } from '../http/HttpClient';
+import { toWeatherForecast } from './dailyForecastMapper';
+import { openWeatherForecastSchema } from './openWeatherForecastSchema';
 import { openWeatherResponseSchema } from './openWeatherResponseSchema';
 import type { OpenWeatherResponse } from './openWeatherResponseSchema';
 
 const WEATHER_SERVICE_NAME = 'OpenWeatherMap';
 const CURRENT_WEATHER_PATH = '/weather';
+const FORECAST_PATH = '/forecast';
 const RESPONSE_LANGUAGE = 'es';
 const TRAILING_SLASHES_PATTERN = /\/+$/;
 const UNEXPECTED_PAYLOAD_MESSAGE =
@@ -44,7 +48,7 @@ export class OpenWeatherMapProvider implements WeatherProvider {
   }
 
   async getCurrentWeather(city: string, units: TemperatureUnits): Promise<WeatherSnapshot> {
-    const response = await this.requestCurrentWeather(city, units);
+    const response = await this.requestWeather(CURRENT_WEATHER_PATH, city, units);
     const parsed = openWeatherResponseSchema.safeParse(response.body);
     if (!parsed.success) {
       throw new ExternalServiceError(WEATHER_SERVICE_NAME, null, UNEXPECTED_PAYLOAD_MESSAGE);
@@ -52,12 +56,22 @@ export class OpenWeatherMapProvider implements WeatherProvider {
     return toWeatherSnapshot(parsed.data, units);
   }
 
-  private async requestCurrentWeather(
+  async getForecast(city: string, units: TemperatureUnits): Promise<WeatherForecast> {
+    const response = await this.requestWeather(FORECAST_PATH, city, units);
+    const parsed = openWeatherForecastSchema.safeParse(response.body);
+    if (!parsed.success) {
+      throw new ExternalServiceError(WEATHER_SERVICE_NAME, null, UNEXPECTED_PAYLOAD_MESSAGE);
+    }
+    return toWeatherForecast(parsed.data, units);
+  }
+
+  private async requestWeather(
+    path: string,
     city: string,
     units: TemperatureUnits
   ): Promise<HttpResponse> {
     try {
-      return await this.httpClient.request(this.buildCurrentWeatherUrl(city, units));
+      return await this.httpClient.request(this.buildWeatherUrl(path, city, units));
     } catch (error) {
       if (error instanceof ExternalServiceError && error.status === HTTP_NOT_FOUND_STATUS) {
         throw new CityNotFoundError(city);
@@ -66,13 +80,13 @@ export class OpenWeatherMapProvider implements WeatherProvider {
     }
   }
 
-  private buildCurrentWeatherUrl(city: string, units: TemperatureUnits): string {
+  private buildWeatherUrl(path: string, city: string, units: TemperatureUnits): string {
     const query = new URLSearchParams({
       q: city,
       units,
       appid: this.apiKey,
       lang: RESPONSE_LANGUAGE
     });
-    return `${this.baseUrl}${CURRENT_WEATHER_PATH}?${query.toString()}`;
+    return `${this.baseUrl}${path}?${query.toString()}`;
   }
 }
